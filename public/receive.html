@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Sending transcript</title>
+<link rel="stylesheet" href="/admin.css">
+</head>
+<body>
+<main style="max-width:380px">
+  <h1 style="font-size:1.3rem">Vote Tracker</h1>
+  <p id="msg">Waiting for the transcript from YouTube…</p>
+  <form id="dateForm" hidden>
+    <label for="d">YouTube didn't say when this was recorded. Meeting date:</label>
+    <input id="d" type="date" required>
+    <p><button class="primary">Send</button></p>
+  </form>
+</main>
+<script>
+const msg = document.getElementById("msg");
+let code = ""; try { code = localStorage.getItem("vt-admin") || ""; } catch (e) {}
+let got = null;
+const ping = setInterval(() => { if (window.opener) window.opener.postMessage("vt-ready", "https://www.youtube.com"); }, 400);
+window.addEventListener("message", (e) => {
+  if (e.origin !== "https://www.youtube.com" || !e.data || !e.data.vt || got) return;
+  got = e.data.vt; clearInterval(ping);
+  if (!got.date) { document.getElementById("dateForm").hidden = false; msg.textContent = `Got ${got.segments.length} transcript lines for "${got.title}".`; return; }
+  send();
+});
+document.getElementById("dateForm").addEventListener("submit", (e) => { e.preventDefault(); got.date = document.getElementById("d").value; document.getElementById("dateForm").hidden = true; send(); });
+async function send() {
+  if (!code) { msg.innerHTML = 'Open the <a href="/admin.html" target="_blank">review page</a> once and enter your admin code, then try again.'; return; }
+  if (!got.segments.length) { msg.textContent = "No transcript lines came through. Open the transcript panel on YouTube and try again."; return; }
+  msg.textContent = `Sending ${got.segments.length} lines…`;
+  try {
+    const res = await fetch("/api/transcript", { method: "POST", headers: { "content-type": "application/json", "x-admin-code": code }, body: JSON.stringify(got) });
+    const r = await res.json();
+    if (!res.ok) throw new Error(r.error || res.status);
+    msg.innerHTML = r.meetingId
+      ? `Saved and attached to <a href="/admin.html#/m/${encodeURIComponent(r.meetingId)}" target="_blank">${r.meetingId}</a>. You can close this window.`
+      : `Saved. It wasn't clear which meeting this is, so it's waiting under <a href="/admin.html#/videos" target="_blank">Unsorted videos</a>.`;
+  } catch (e) { msg.textContent = "Couldn't save: " + e.message; }
+}
+setTimeout(() => { if (!got) msg.textContent = "Nothing arrived. Close this window, make sure the YouTube video page is open, and click the bookmark again."; }, 45000);
+</script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Vote Tracker – Review</title>
+<link rel="stylesheet" href="/admin.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="#/">Vote Tracker</a>
+  <nav>
+    <a href="#/">Meetings</a>
+    <a href="#/videos">Unsorted videos</a>
+    <a href="#/issues">Issues</a>
+    <a href="#/settings">Settings</a>
+  </nav>
+</header>
+
+<main id="app">
+  <section id="login" class="card narrow" hidden>
+    <h1>Review</h1>
+    <p>Enter your admin code.</p>
+    <form id="loginForm">
+      <input id="codeInput" type="password" autocomplete="current-password" required>
+      <button>Open</button>
+    </form>
+    <p id="loginErr" class="err"></p>
+  </section>
+  <div id="view"></div>
+</main>
+
+<div id="toast" role="status" hidden></div>
+<script src="/admin.js" type="module"></script>
+</body>
+</html>
