@@ -7,7 +7,7 @@ mkdir -p "$DIR"
 echo "Downloading yt-dlp (the tool that reads YouTube captions)…"
 curl -sSL -o "$DIR/yt-dlp" https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos
 chmod +x "$DIR/yt-dlp"; xattr -d com.apple.quarantine "$DIR/yt-dlp" 2>/dev/null || true
-cp "$HERE/fetch-transcripts.sh" "$DIR/fetch-transcripts.sh"; chmod +x "$DIR/fetch-transcripts.sh"
+cp "$HERE/../public/mac/fetch-transcripts.sh" "$DIR/fetch-transcripts.sh"; chmod +x "$DIR/fetch-transcripts.sh"
 if [ ! -f "$DIR/config" ]; then
   read -r -p "Site address (e.g. https://your-site.vercel.app): " SITE
   read -r -s -p "Admin code: " CODE; echo

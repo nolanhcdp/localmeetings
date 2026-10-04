@@ -30,7 +30,7 @@ export async function POST(request) {
     if (!/^[\w-]{11}$/.test(meta.videoId || "")) return fail("Missing video id");
     const date = normDate(meta.date);
     if (!date) return fail("Missing video date");
-    const v = await receiveVideo({ videoId: meta.videoId, title: meta.title || "", date, duration: Number(meta.duration) || 0, lines, noCaptions: !lines?.length && !!meta.noCaptions });
+    const v = await receiveVideo({ videoId: meta.videoId, title: meta.title || "", date, duration: Number(meta.duration) || 0, lines, noCaptions: !lines?.length && !!meta.noCaptions, channelId: meta.channelId || "" });
     return json({ ok: true, videoId: v.videoId, body: v.body || null, meetingId: v.meetingId || null, lines: lines?.length || 0 });
   } catch (e) { return fail(e, 500); }
 }

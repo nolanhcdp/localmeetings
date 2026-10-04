@@ -1,4 +1,4 @@
-// Vote Tracker review screen.
+// localmeetings review screen.
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const store = { get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} } };
@@ -9,7 +9,8 @@ const STAGES = ["introduced", "read", "public hearing", "adopted", "approved", "
 const CATEGORIES = ["spending", "transfer", "salaries", "taxes", "budget", "ordinance", "resolution", "contract", "purchase", "land use", "tax abatement", "appointment", "claims", "minutes", "report", "public comment", "board member business", "other"];
 const METHODS = ["voice", "roll call", "consensus", "none", "unclear"];
 const RESULTS = ["passed", "failed", "tabled", "no vote", "unclear"];
-const BODY_NAMES = { council: "County Council", commissioners: "Commissioners", plan: "Plan Commission" };
+let BODY_NAMES = { council: "County Council", commissioners: "Commissioners", plan: "County Plan Comm." };
+const setBodies = (bodies) => { if (bodies) BODY_NAMES = Object.fromEntries(Object.entries(bodies).map(([k, b]) => [k, b.short || b.name])); };
 
 function toast(msg, ms = 2600) { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), ms); }
 const fmtDate = (d) => new Date(d + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
@@ -44,9 +45,10 @@ async function route() {
 
 // ---------- Meetings list
 let FILTER = store.get("vt-filter") || "review";
+let BODYF = store.get("vt-body") || "";
 async function viewMeetings() {
-  OV = await api("overview");
-  const ms = OV.meetings;
+  OV = await api("overview"); setBodies(OV.bodies);
+  const ms = OV.meetings.filter((m) => !BODYF || m.body === BODYF);
   const counts = { review: ms.filter((m) => m.status === "drafted").length, ready: ms.filter((m) => m.ready).length, waiting: ms.filter((m) => m.status === "waiting" && !m.ready).length, approved: ms.filter((m) => m.status === "approved").length, all: ms.length };
   const show = ms.filter((m) => FILTER === "all" ? true : FILTER === "review" ? m.status === "drafted" || m.status === "error" : FILTER === "ready" ? m.ready : FILTER === "waiting" ? m.status === "waiting" && !m.ready : m.status === "approved");
   const unsorted = OV.videos.filter((v) => !v.meetingId && !["other", "budget"].includes(v.body)).length;
@@ -58,11 +60,12 @@ async function viewMeetings() {
         <div class="meta">${lr ? `Last daily check ${new Date(lr.at).toLocaleString()}${lr.errors?.length ? ` · <span class="err">${lr.errors.length} problem(s)</span>` : ""}` : "The daily check hasn't run yet."}${unsorted ? ` · <a href="#/videos">${unsorted} video(s) need a meeting</a>` : ""}</div>
       </div>
       <div class="actions">
-        <button id="scan">Check county site now</button>
+        <button id="scan">Check for new documents</button>
         <button id="draftAll" class="primary" ${counts.ready ? "" : "disabled"}>Draft all ready (${counts.ready})</button>
       </div>
     </div>
     <div class="filter" style="margin-bottom:.8rem">
+      <select id="bodyF" style="width:auto"><option value="">All boards</option>${Object.entries(BODY_NAMES).map(([k, n]) => `<option value="${k}" ${k === BODYF ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
       ${[["review", "To review"], ["ready", "Ready to draft"], ["waiting", "Waiting on sources"], ["approved", "Approved"], ["all", "All"]].map(([k, l]) => `<button data-f="${k}" class="${FILTER === k ? "on" : ""}">${l} (${counts[k]})</button>`).join("")}
     </div>
     <p id="progress" class="meta"></p>
@@ -70,15 +73,16 @@ async function viewMeetings() {
       ${show.map((m) => `<tr>
         <td>${fmtDate(m.date)}</td>
         <td>${BODY_NAMES[m.body] || m.body}</td>
-        <td class="src">${src("Agenda", m.hasPacket, m.body === "plan")}${src("Minutes", m.hasMinutes, m.body === "plan")}${src("Video", m.hasVideo)}</td>
+        <td class="src">${src("Agenda", m.hasPacket, OV.bodies?.[m.body]?.docs === null)}${src("Minutes", m.hasMinutes, OV.bodies?.[m.body]?.docs === null)}${src("Video", m.hasVideo)}</td>
         <td>${statusText(m)}</td>
         <td style="text-align:right">${m.ready ? `<button data-draft="${m.id}">Draft</button> ` : ""}${m.status === "drafted" || m.status === "approved" || m.status === "error" ? `<a class="btn ${m.status === "drafted" ? "primary" : ""}" href="#/m/${encodeURIComponent(m.id)}">${m.status === "approved" ? "Open" : "Review"}</a>` : ""}</td>
       </tr>`).join("")}
     </tbody></table>` : `<p class="muted">Nothing here.</p>`}`;
+  $("#bodyF").onchange = (e) => { BODYF = e.target.value; store.set("vt-body", BODYF); viewMeetings(); };
   document.querySelectorAll("[data-f]").forEach((b) => b.onclick = () => { FILTER = b.dataset.f; store.set("vt-filter", FILTER); viewMeetings(); });
   document.querySelectorAll("[data-draft]").forEach((b) => b.onclick = () => draftMany([b.dataset.draft]));
   $("#draftAll").onclick = () => draftMany(ms.filter((m) => m.ready).sort((a, b) => a.date.localeCompare(b.date)).map((m) => m.id));
-  $("#scan").onclick = async () => { $("#scan").disabled = true; try { const r = await api("scan"); toast(`Found ${r.packets} packets, ${r.created.length} new.`); viewMeetings(); } catch (e) { toast(e.message); $("#scan").disabled = false; } };
+  $("#scan").onclick = async () => { $("#scan").disabled = true; try { const r = await api("scan"); toast(`Found ${r.packets} documents, ${r.created.length} new meetings.${r.city?.error ? " Kokomo site: " + r.city.error : ""}`, 5000); viewMeetings(); } catch (e) { toast(e.message); $("#scan").disabled = false; } };
 }
 const src = (label, ok, na) => na ? `<span class="no" title="Not posted online for this body">${label} n/a</span>` : `<span class="${ok ? "yes" : "no"}">${label} ${ok ? "✓" : "–"}</span>`;
 function statusText(m) {
@@ -109,6 +113,7 @@ async function draftMany(ids) {
 let CUR = null; // { meeting, record, video, lines }
 async function viewMeeting(id) {
   const data = await api("meeting", { id });
+  setBodies(data.bodies);
   const m = data.meeting;
   const record = structuredClone(m.status === "approved" ? m.record : m.draft) || { summary: "", attendance: { present: [], absent: [] }, items: [] };
   CUR = { meeting: m, record, video: data.video, lines: null, glossary: data.glossary, dirty: false };
@@ -124,7 +129,8 @@ async function viewMeeting(id) {
           ${m.status === "approved" ? `<span class="status-approved">Approved ${new Date(m.approvedAt).toLocaleDateString()}</span> · ` : ""}
           Drafted from: ${[dm.hadPacket && "agenda packet", dm.hadMinutes && "official minutes", dm.hadVideo && "video"].filter(Boolean).join(", ") || "—"}
           ${m.packetUrl ? ` · <a href="${esc(m.packetUrl)}" target="_blank" rel="noopener">Agenda packet</a>` : ""}
-          ${m.minutesUrl ? ` · <a href="${esc(m.minutesUrl)}" target="_blank" rel="noopener">Minutes (in ${fmtDate(m.minutesDate)} packet)</a>` : ""}
+          ${m.minutesUrl ? ` · <a href="${esc(m.minutesUrl)}" target="_blank" rel="noopener">${m.minutesDate && m.minutesDate !== m.date ? `Minutes (in ${fmtDate(m.minutesDate)} packet)` : `Minutes${m.minutesName && /draft/i.test(m.minutesName) ? " (draft)" : ""}`}</a>` : ""}
+          ${m.packetError ? ` · <span class="err">${esc(m.packetError)}</span>` : ""}
           ${dm.truncated ? ` · <span class="err">Draft was cut off; consider redrafting.</span>` : ""}
         </p>
         ${m.minutesArrivedAfterDraft ? `<div class="check">Official minutes were posted after this draft. Redraft to fold them in${m.edited ? " (this replaces your edits)" : ""}.</div>` : ""}
@@ -151,7 +157,7 @@ async function viewMeeting(id) {
       </div>
       <aside class="side">
         ${m.videoId ? `<iframe id="player" class="video" src="https://www.youtube-nocookie.com/embed/${esc(m.videoId)}" allow="autoplay; encrypted-media" allowfullscreen></iframe>
-          <div class="meta">${esc(data.video?.title || "")} · <a href="https://www.youtube.com/watch?v=${esc(m.videoId)}" target="_blank" rel="noopener">YouTube</a></div>
+          <div class="meta">${esc(data.video?.title || "")} · <a href="https://www.youtube.com/watch?v=${esc(m.videoId)}" target="_blank" rel="noopener">YouTube</a>${(m.moreVideoIds || []).map((id, i) => ` · <a href="https://www.youtube.com/watch?v=${esc(id)}" target="_blank" rel="noopener">Part ${i + 2}</a>`).join("")}</div>
           <input id="txSearch" placeholder="Search the transcript">
           <div id="tx" class="tx card"><p class="muted">Loading transcript…</p></div>`
           : `<div class="card muted">No video attached. If it's on YouTube, attach it from <a href="#/videos">Unsorted videos</a> or use the browser button.</div>`}
@@ -299,7 +305,7 @@ async function loadTranscript(videoId) {
 
 // ---------- Unsorted videos
 async function viewVideos() {
-  OV = await api("overview");
+  OV = await api("overview"); setBodies(OV.bodies);
   const vids = OV.videos.sort((a, b) => b.date.localeCompare(a.date));
   const unsorted = vids.filter((v) => !v.meetingId && !["other", "budget"].includes(v.body));
   const ignored = vids.filter((v) => !v.meetingId && ["other", "budget"].includes(v.body));
@@ -307,7 +313,7 @@ async function viewVideos() {
   const rowsFor = (list) => list.map((v) => `<tr>
     <td>${fmtDate(v.date)}</td>
     <td><a href="https://www.youtube.com/watch?v=${esc(v.videoId)}" target="_blank" rel="noopener">${esc(v.title || v.videoId)}</a><div class="meta">${Math.round((v.duration || 0) / 60)} min · ${v.noCaptions ? "no captions" : `${v.lineCount} transcript lines`}${v.guessed ? " · placed by guess, check it" : ""}</div></td>
-    <td><select data-body="${v.videoId}">${["", "council", "commissioners", "plan", "other", "budget"].map((b) => `<option value="${b}" ${b === (v.body || "") ? "selected" : ""}>${b ? (BODY_NAMES[b] || (b === "other" ? "Other board (ignore)" : "Budget hearing (ignore)")) : "Choose…"}</option>`).join("")}</select></td>
+    <td><select data-body="${v.videoId}">${["", ...Object.keys(BODY_NAMES), "other", "budget"].map((b) => `<option value="${b}" ${b === (v.body || "") ? "selected" : ""}>${b ? (BODY_NAMES[b] || (b === "other" ? "Other board (ignore)" : "Budget hearing (ignore)")) : "Choose…"}</option>`).join("")}</select></td>
     <td><input type="date" data-date="${v.videoId}" value="${esc(v.date)}"></td>
     <td><button data-assign="${v.videoId}">${v.meetingId ? "Move" : "Save"}</button>${v.meetingId ? ` <a href="#/m/${encodeURIComponent(v.meetingId)}">${esc(v.meetingId)}</a>` : ""}</td>
   </tr>`).join("");
@@ -328,6 +334,7 @@ async function viewVideos() {
 
 // ---------- Issues
 async function viewIssues() {
+  if (!OV) { OV = await api("overview"); setBodies(OV.bodies); }
   const { issues } = await api("issues");
   issues.sort((a, b) => (b.lastDate || "").localeCompare(a.lastDate || ""));
   $("#view").innerHTML = `
@@ -342,7 +349,7 @@ async function viewIssues() {
 
 // ---------- Settings
 async function viewSettings() {
-  OV = await api("overview");
+  OV = await api("overview"); setBodies(OV.bodies);
   const roster = OV.roster;
   const origin = location.origin;
   const bm = bookmarklet(origin);
@@ -350,7 +357,7 @@ async function viewSettings() {
     <h1>Settings</h1>
     <h2>Browser button for transcripts</h2>
     <div class="card">
-      <p>Drag this to your bookmarks bar: <a class="bm" href="${esc(bm)}">Send to Vote Tracker</a></p>
+      <p>Drag this to your bookmarks bar: <a class="bm" href="${esc(bm)}">Send to localmeetings</a></p>
       <p class="muted">Use it if the Mac job misses a meeting. Open the meeting video on YouTube, click the bookmark, and the transcript is sent here. A small window confirms it.</p>
     </div>
     <h2>Board members</h2>
@@ -388,7 +395,7 @@ const rosterRow = (r) => `<div class="row rrow" style="margin-bottom:.4rem">
 </div>`;
 
 function bookmarklet(origin) {
-  const code = `(async()=>{const O=${JSON.stringify(origin)};const id=new URLSearchParams(location.search).get('v');if(!/youtube\\.com$/.test(location.hostname)||!id){alert('Open the meeting video on YouTube first.');return}const w=window.open(O+'/receive.html','vtreceive','width=420,height=320');const q='ytd-transcript-segment-renderer,transcript-segment-view-model';const S=(ms)=>new Promise(r=>setTimeout(r,ms));let segs=document.querySelectorAll(q);if(!segs.length){document.querySelector('#description #expand, tp-yt-paper-button#expand')?.click();await S(700);const b=[...document.querySelectorAll('button')].find(b=>/show transcript/i.test((b.getAttribute('aria-label')||'')+' '+b.textContent));if(!b){w&&w.close();alert('This video has no transcript button.');return}b.click();for(let i=0;i<40&&!(segs=document.querySelectorAll(q)).length;i++)await S(500);await S(800);segs=document.querySelectorAll(q)}const out=[...segs].map(s=>{const ts=(s.querySelector('.segment-timestamp')||{}).textContent;const tx=(s.querySelector('.segment-text')||{}).textContent;if(ts&&tx)return[ts.trim(),tx.trim()];const p=s.innerText.trim().split(/\\n+/);return[p[0].trim(),p.slice(1).join(' ').replace(/^\\s*\\d+ (hours?|minutes?|seconds?)(, \\d+ (minutes?|seconds?))*\\s*/,'').trim()]}).filter(x=>/^\\d/.test(x[0])&&x[1]);const meta=(n)=>(document.querySelector('meta[itemprop="'+n+'"]')||{}).content||'';const title=(document.querySelector('h1.ytd-watch-metadata, h1 yt-formatted-string')||{}).textContent||document.title.replace(/ - YouTube$/,'');const date=(meta('uploadDate')||meta('datePublished')).slice(0,10);const iso=meta('duration').match(/PT(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+)S)?/)||[];const duration=Math.round((document.querySelector('video')||{}).duration||0)||((+iso[1]||0)*3600+(+iso[2]||0)*60+(+iso[3]||0));const data={videoId:id,title:title.trim(),date,duration,segments:out};const h=(e)=>{if(e.origin!==O||e.data!=='vt-ready')return;w.postMessage({vt:data},O);window.removeEventListener('message',h)};window.addEventListener('message',h)})()`;
+  const code = `(async()=>{const O=${JSON.stringify(origin)};const id=new URLSearchParams(location.search).get('v');if(!/youtube\\.com$/.test(location.hostname)||!id){alert('Open the meeting video on YouTube first.');return}const w=window.open(O+'/receive.html','vtreceive','width=420,height=320');const q='ytd-transcript-segment-renderer,transcript-segment-view-model';const S=(ms)=>new Promise(r=>setTimeout(r,ms));let segs=document.querySelectorAll(q);if(!segs.length){document.querySelector('#description #expand, tp-yt-paper-button#expand')?.click();await S(700);const b=[...document.querySelectorAll('button')].find(b=>/show transcript/i.test((b.getAttribute('aria-label')||'')+' '+b.textContent));if(!b){w&&w.close();alert('This video has no transcript button.');return}b.click();for(let i=0;i<40&&!(segs=document.querySelectorAll(q)).length;i++)await S(500);await S(800);segs=document.querySelectorAll(q)}const out=[...segs].map(s=>{const ts=(s.querySelector('.segment-timestamp')||{}).textContent;const tx=(s.querySelector('.segment-text')||{}).textContent;if(ts&&tx)return[ts.trim(),tx.trim()];const p=s.innerText.trim().split(/\\n+/);return[p[0].trim(),p.slice(1).join(' ').replace(/^\\s*\\d+ (hours?|minutes?|seconds?)(, \\d+ (minutes?|seconds?))*\\s*/,'').trim()]}).filter(x=>/^\\d/.test(x[0])&&x[1]);const meta=(n)=>(document.querySelector('meta[itemprop="'+n+'"]')||{}).content||'';const title=(document.querySelector('h1.ytd-watch-metadata, h1 yt-formatted-string')||{}).textContent||document.title.replace(/ - YouTube$/,'');const date=(meta('uploadDate')||meta('datePublished')).slice(0,10);const iso=meta('duration').match(/PT(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+)S)?/)||[];const duration=Math.round((document.querySelector('video')||{}).duration||0)||((+iso[1]||0)*3600+(+iso[2]||0)*60+(+iso[3]||0));const own=(document.querySelector('ytd-watch-metadata #owner a[href*="/@"], ytd-video-owner-renderer a[href*="/@"]')||{}).href||'';const channelId=meta('channelId')||(own.match(/@[^/?]+/)||[''])[0];const data={videoId:id,channelId,title:title.trim(),date,duration,segments:out};const h=(e)=>{if(e.origin!==O||e.data!=='vt-ready')return;w.postMessage({vt:data},O);window.removeEventListener('message',h)};window.addEventListener('message',h)})()`;
   return "javascript:" + encodeURIComponent(code);
 }
 
