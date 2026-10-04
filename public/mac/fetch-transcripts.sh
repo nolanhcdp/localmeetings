@@ -29,9 +29,12 @@ IDS=$( for src in $SOURCES; do
   "$YTDLP" --flat-playlist --playlist-end $LIMIT --print "%(id)s" "$src" 2>/dev/null && echo "$mark" >> "$TMP/marks"
 done | sort -u)
 
+# Videos the site still has no transcript for (YouTube sometimes refuses with "too many requests"): try them again.
+RETRY=$(curl -fsS --max-time 30 -H "x-admin-code: $ADMIN_CODE" "$SITE/api/transcript?missing=1" 2>/dev/null | grep -oE '"[A-Za-z0-9_-]{11}"' | tr -d '"')
+
 sent=0
-for id in $IDS; do
-  grep -qxF -- "$id" "$SEEN" && continue
+for id in $(printf '%s\n' $RETRY $IDS | awk '!seen[$0]++'); do
+  if ! printf '%s\n' $RETRY | grep -qxF -- "$id"; then grep -qxF -- "$id" "$SEEN" && continue; fi
   info=$("$YTDLP" --skip-download --print "%(release_date,upload_date)s|%(duration)s|%(live_status)s|%(channel_id)s|%(title)s" "https://www.youtube.com/watch?v=$id" 2>/dev/null | head -1)
   [ -z "$info" ] && continue
   IFS='|' read -r vdate dur live chan title <<< "$info"
@@ -43,19 +46,31 @@ for id in $IDS; do
   if echo "$title" | grep -qi "budget"; then echo "$id" >> "$SEEN"; log "skipped budget hearing $id $vdate"; continue; fi
   t=${title//\\/\\\\}; t=${t//\"/\\\"}
   meta="{\"videoId\":\"$id\",\"channelId\":\"$chan\",\"title\":\"$t\",\"date\":\"$vdate\",\"duration\":${dur%.*}}"
-  "$YTDLP" --skip-download --write-auto-subs --write-subs --sub-langs "en.*" --sub-format json3 -o "$TMP/$id.%(ext)s" "https://www.youtube.com/watch?v=$id" >/dev/null 2>&1
-  f=$(ls "$TMP/$id".*json3 2>/dev/null | head -1)
+  # One caption track: the original-language one first (Kokomo's videos list it as en-orig), then plain English.
+  f=""; out=""
+  for lang in en-orig en; do
+    out=$("$YTDLP" --skip-download --write-auto-subs --write-subs --sub-langs "$lang" --sub-format json3 --sleep-requests 1 -o "$TMP/$id.%(ext)s" "https://www.youtube.com/watch?v=$id" 2>&1)
+    f=$(ls "$TMP/$id".*json3 2>/dev/null | head -1)
+    if [ -n "$f" ] && [ "$(wc -c < "$f")" -gt 200 ]; then break; else rm -f "$TMP/$id".*json3; f=""; fi
+    echo "$out" | grep -qiE "429|too many requests" && break
+  done
+  if echo "$out" | grep -qiE "429|too many requests" && [ -z "$f" ]; then
+    log "YouTube is limiting requests right now; stopping here. The rest will be tried at the next run."
+    break
+  fi
   if [ -n "$f" ]; then
     out=$(curl -sS --max-time 60 -H "x-admin-code: $ADMIN_CODE" --form-string "meta=$meta" -F "subs=@$f;type=application/json" "$SITE/api/transcript")
     if echo "$out" | grep -q '"ok":true'; then echo "$id" >> "$SEEN"; sent=$((sent+1)); log "sent $id $vdate $title -> $out"; else log "FAILED $id: $out"; fi
-  else
-    # No captions yet. YouTube can take a day; after a week, record it as having none.
-    age=$(( ( $(date +%s) - $(date -j -f %Y%m%d "$vdate" +%s 2>/dev/null || date +%s) ) / 86400 ))
-    if [ "$age" -gt 7 ]; then
-      meta="${meta%\}},\"noCaptions\":true}"
+  elif echo "$out" | grep -qiE "no subtitles|no automatic captions|There are no subtitles"; then
+    # YouTube says this video has no captions. Give it two days to finish processing, then record it as having none.
+    age=$(( ( $(date +%s) - $(date -j -f %Y%m%d "$vdate" +%s 2>/dev/null || date -d "$vdate" +%s 2>/dev/null || date +%s) ) / 86400 ))
+    if [ "$age" -gt 2 ]; then
+      meta="${meta%\}},\"noCaptions\":true,\"confirmed\":true}"
       curl -sS --max-time 30 -H "x-admin-code: $ADMIN_CODE" -H "content-type: application/json" -d "$meta" "$SITE/api/transcript" >/dev/null && echo "$id" >> "$SEEN"
       log "no captions $id $vdate $title"
     fi
+  else
+    log "couldn't get captions for $id $vdate (will retry): $(echo "$out" | grep -i error | head -1)"
   fi
 done
 [ -f "$TMP/marks" ] && while read -r m; do touch "$m"; done < "$TMP/marks"   # only after a full pass

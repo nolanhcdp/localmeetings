@@ -73,7 +73,7 @@ async function viewMeetings() {
       ${show.map((m) => `<tr>
         <td>${fmtDate(m.date)}</td>
         <td>${BODY_NAMES[m.body] || m.body}</td>
-        <td class="src">${src("Agenda", m.hasPacket, OV.bodies?.[m.body]?.docs === null)}${src("Minutes", m.hasMinutes, OV.bodies?.[m.body]?.docs === null)}${src("Video", m.hasVideo)}</td>
+        <td class="src">${src("Agenda", m.hasPacket, OV.bodies?.[m.body]?.docs === null)}${src("Minutes", m.hasMinutes, OV.bodies?.[m.body]?.docs === null)}${m.hasVideo && !m.hasTranscript ? `<span class="no" title="Video found, transcript not in yet. The Mac job retries each morning.">Video, no transcript yet</span>` : src("Video", m.hasVideo)}</td>
         <td>${statusText(m)}</td>
         <td style="text-align:right">${m.ready ? `<button data-draft="${m.id}">Draft</button> ` : ""}${m.status === "drafted" || m.status === "approved" || m.status === "error" ? `<a class="btn ${m.status === "drafted" ? "primary" : ""}" href="#/m/${encodeURIComponent(m.id)}">${m.status === "approved" ? "Open" : "Review"}</a>` : ""}</td>
       </tr>`).join("")}

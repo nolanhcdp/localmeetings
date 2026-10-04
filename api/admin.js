@@ -7,11 +7,11 @@ export const config = { maxDuration: 60 };
 
 const slim = (m) => ({
   id: m.id, body: m.body, date: m.date, title: m.title || "", status: m.status,
-  hasPacket: !!m.packetUrl, hasMinutes: !!m.minutesUrl, hasVideo: !!m.videoId, edited: !!m.edited,
+  hasPacket: !!m.packetUrl, hasMinutes: !!m.minutesUrl, hasVideo: !!m.videoId, hasTranscript: !!m.hasTranscript, edited: !!m.edited,
   items: (m.record || m.draft)?.items?.length || 0, error: m.error || "",
   needsCheck: ((m.record || m.draft)?.items || []).filter((i) => i.confidence === "low" || i.checkNote).length,
   minutesArrivedAfterDraft: !!m.minutesArrivedAfterDraft, videoArrivedAfterDraft: !!m.videoArrivedAfterDraft,
-  ready: m.status === "waiting" && readyToDraft(m),
+  ready: (m.status === "waiting" || m.status === "error") && readyToDraft(m),
 });
 
 export async function POST(request) {
