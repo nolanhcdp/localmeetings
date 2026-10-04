@@ -1,4 +1,48 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
-<title>localmeetings</title><link rel="stylesheet" href="/admin.css"></head>
-<body><main class="narrow"><h1>Howard County meeting record</h1><p class="muted">The public site is on its way. <a href="/admin.html">Review page</a></p></main></body></html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Local Meetings · Howard County and Kokomo</title>
+<meta name="description" content="What Howard County and Kokomo government boards are deciding, in plain language: upcoming agendas, votes, budgets and how to weigh in.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22 rx=%223%22 fill=%22%230e5c58%22/%3E%3C/svg%3E">
+</head>
+<body>
+<header class="site">
+  <div class="wrap bar">
+    <a class="brand" href="#/">Local Meetings <span>Howard County &amp; Kokomo</span></a>
+    <button class="menu" aria-expanded="false" aria-controls="nav">Menu</button>
+    <nav id="nav">
+      <a href="#/" data-nav="home">Coming up</a>
+      <a href="#/meetings" data-nav="meetings">Meetings</a>
+      <a href="#/issues" data-nav="issues">Issues</a>
+      <a href="#/officials" data-nav="officials">Officials</a>
+      <a href="#/budget" data-nav="budget">Budgets</a>
+      <a href="#/search" data-nav="search" class="searchlink">Search</a>
+    </nav>
+  </div>
+</header>
+<main id="view" class="wrap" tabindex="-1"><p class="loading">Loading…</p></main>
+<footer class="site">
+  <div class="wrap">
+    <p>Built from public agendas, minutes and meeting videos posted by Howard County and the City of Kokomo. Summaries are written with AI and labeled by how well the official record backs them up. <a href="#/about">How this works</a></p>
+  </div>
+</footer>
+<dialog id="report">
+  <form method="dialog" id="reportForm">
+    <h2>Report an error</h2>
+    <p id="reportWhat" class="muted"></p>
+    <label>What looks wrong?<textarea name="text" rows="5" required minlength="5" maxlength="1500"></textarea></label>
+    <label>Email or phone, if you'd like a reply (optional)<input name="contact" maxlength="200" autocomplete="email"></label>
+    <p class="err" id="reportErr"></p>
+    <div class="row"><button value="cancel" formnovalidate class="ghost">Cancel</button><button value="send" class="primary">Send</button></div>
+  </form>
+</dialog>
+<script src="/site.js" type="module"></script>
+</body>
+</html>

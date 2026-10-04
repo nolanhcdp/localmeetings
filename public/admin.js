@@ -33,7 +33,7 @@ window.addEventListener("hashchange", route);
 async function route() {
   if (!CODE) return showLogin();
   const h = location.hash.slice(1) || "/";
-  document.querySelectorAll(".top nav a").forEach((a) => a.classList.toggle("on", a.getAttribute("href") === "#" + h || (h.startsWith("/m/") && a.getAttribute("href") === "#/") || (h.startsWith("/ref/") && a.getAttribute("href") === "#/library")));
+  document.querySelectorAll(".top nav a").forEach((a) => a.classList.toggle("on", a.getAttribute("href") === "#" + h || (h.startsWith("/m/") && a.getAttribute("href") === "#/") || (h.startsWith("/ref/") && a.getAttribute("href") === "#/library") || (h.startsWith("/research") && a.getAttribute("href") === "#/research")));
   try {
     if (h.startsWith("/m/")) return await viewMeeting(decodeURIComponent(h.slice(3)));
     if (h === "/videos") return await viewVideos();
@@ -41,18 +41,27 @@ async function route() {
     if (h === "/library") return await viewLibrary();
     if (h.startsWith("/ref/")) return await viewRef(decodeURIComponent(h.slice(5)));
     if (h === "/settings") return await viewSettings();
+    if (h === "/queue") return await viewQueue();
+    if (h.startsWith("/research")) return await viewResearch(h.split("/")[2] || "flags");
     return await viewMeetings();
   } catch (e) { if (e.message !== "auth") $("#view").innerHTML = `<p class="err">${esc(e.message)}</p>`; }
 }
 
 // ---------- Meetings list
-let FILTER = store.get("vt-filter") || "review";
+let FILTER = store.get("vt-filter2") || "live";
 let BODYF = store.get("vt-body") || "";
 async function viewMeetings() {
   OV = await api("overview"); setBodies(OV.bodies);
   const ms = OV.meetings.filter((m) => !BODYF || m.body === BODYF);
-  const counts = { review: ms.filter((m) => m.status === "drafted").length, ready: ms.filter((m) => m.ready).length, waiting: ms.filter((m) => m.status === "waiting" && !m.ready).length, approved: ms.filter((m) => m.status === "approved").length, all: ms.length };
-  const show = ms.filter((m) => FILTER === "all" ? true : FILTER === "review" ? m.status === "drafted" || m.status === "error" : FILTER === "ready" ? m.ready : FILTER === "waiting" ? m.status === "waiting" && !m.ready : m.status === "approved");
+  const isLive = (m) => (m.status === "drafted" || m.status === "approved") && !m.unpublished;
+  const F = {
+    live: (m) => isLive(m), held: (m) => (m.labels?.held || 0) > 0, check: (m) => m.needsCheck,
+    problems: (m) => m.status === "error" || !!m.previewError, ready: (m) => m.ready, upcoming: (m) => m.date >= new Date().toISOString().slice(0, 10),
+    waiting: (m) => m.status === "waiting" && !m.ready && m.date < new Date().toISOString().slice(0, 10), all: () => true,
+  };
+  const counts = Object.fromEntries(Object.entries(F).map(([k, f]) => [k, ms.filter(f).length]));
+  if (!F[FILTER]) FILTER = "live";
+  const show = ms.filter(F[FILTER]);
   const unsorted = OV.videos.filter((v) => !v.meetingId && !["other", "budget"].includes(v.body)).length;
   const lr = OV.lastRun;
   $("#view").innerHTML = `
@@ -62,14 +71,15 @@ async function viewMeetings() {
         <div class="meta">${lr ? `Last daily check ${new Date(lr.at).toLocaleString()}${lr.errors?.length ? ` · <span class="err">${lr.errors.length} problem(s)</span>` : ""}` : "The daily check hasn't run yet."}${unsorted ? ` · <a href="#/videos">${unsorted} video(s) need a meeting</a>` : ""}</div>
       </div>
       <div class="actions">
-        <label class="btn" title="Drafts or reference documents made outside the app (.json)">Import<input id="importFile" type="file" accept=".json,application/json" multiple hidden></label>
+        <label class="btn" title="Drafts, minutes checks or reference documents made in a Claude chat (.json)">Import<input id="importFile" type="file" accept=".json,application/json" multiple hidden></label>
+        <button id="export" title="Download every draft so Claude can check them against minutes in a chat, on your plan">Export for Claude</button>
         <button id="scan">Check for new documents</button>
         <button id="draftAll" class="primary" ${counts.ready ? "" : "disabled"}>Draft all ready (${counts.ready})</button>
       </div>
     </div>
     <div class="filter" style="margin-bottom:.8rem">
       <select id="bodyF" style="width:auto"><option value="">All boards</option>${Object.entries(BODY_NAMES).map(([k, n]) => `<option value="${k}" ${k === BODYF ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
-      ${[["review", "To review"], ["ready", "Ready to draft"], ["waiting", "Waiting on sources"], ["approved", "Approved"], ["all", "All"]].map(([k, l]) => `<button data-f="${k}" class="${FILTER === k ? "on" : ""}">${l} (${counts[k]})</button>`).join("")}
+      ${[["live", "Live"], ["held", "Has held items"], ["check", "Minutes to check"], ["upcoming", "Upcoming"], ["ready", "Ready to draft"], ["problems", "Problems"], ["waiting", "Waiting on sources"], ["all", "All"]].map(([k, l]) => `<button data-f="${k}" class="${FILTER === k ? "on" : ""}">${l} (${counts[k]})</button>`).join("")}
     </div>
     <p id="progress" class="meta"></p>
     ${show.length ? `<table><thead><tr><th>Date</th><th>Body</th><th>Sources</th><th>Status</th><th></th></tr></thead><tbody>
@@ -78,12 +88,18 @@ async function viewMeetings() {
         <td>${BODY_NAMES[m.body] || m.body}</td>
         <td class="src">${src("Agenda", m.hasPacket, OV.bodies?.[m.body]?.docs === null)}${src("Minutes", m.hasMinutes, OV.bodies?.[m.body]?.docs === null)}${m.hasVideo && !m.hasTranscript ? `<span class="no" title="Video found, transcript not in yet. The Mac job retries each morning.">Video, no transcript yet</span>` : src("Video", m.hasVideo)}</td>
         <td>${statusText(m)}</td>
-        <td style="text-align:right">${m.ready ? `<button data-draft="${m.id}">Draft</button> ` : ""}${m.status === "drafted" || m.status === "approved" || m.status === "error" ? `<a class="btn ${m.status === "drafted" ? "primary" : ""}" href="#/m/${encodeURIComponent(m.id)}">${m.status === "approved" ? "Open" : "Review"}</a>` : ""}</td>
+        <td style="text-align:right">${m.ready ? `<button data-draft="${m.id}">Draft</button> ` : ""}${m.status === "drafted" || m.status === "approved" || m.status === "error" ? `<a class="btn" href="#/m/${encodeURIComponent(m.id)}">Open</a>` : ""}${m.needsCheck ? ` <button data-check="${m.id}" title="Have Claude compare this draft with the official minutes (API, a few cents)">Check minutes</button>` : ""}${m.needsPreview || m.previewError ? ` <button data-preview="${m.id}" title="Have Claude read the agenda packet (API)">Preview</button>` : ""}</td>
       </tr>`).join("")}
     </tbody></table>` : `<p class="muted">Nothing here.</p>`}`;
   $("#bodyF").onchange = (e) => { BODYF = e.target.value; store.set("vt-body", BODYF); viewMeetings(); };
-  document.querySelectorAll("[data-f]").forEach((b) => b.onclick = () => { FILTER = b.dataset.f; store.set("vt-filter", FILTER); viewMeetings(); });
+  document.querySelectorAll("[data-f]").forEach((b) => b.onclick = () => { FILTER = b.dataset.f; store.set("vt-filter2", FILTER); viewMeetings(); });
   document.querySelectorAll("[data-draft]").forEach((b) => b.onclick = () => draftMany([b.dataset.draft]));
+  document.querySelectorAll("[data-check],[data-preview]").forEach((b) => b.onclick = async () => {
+    const kind = b.dataset.check ? "check" : "preview", id = b.dataset.check || b.dataset.preview;
+    b.disabled = true; b.textContent = "Working… about a minute";
+    try { const r = await api("", { id, kind }, "/api/draft"); toast(kind === "check" ? `Checked: ${r.check.matched} match, ${r.check.conflicts} held for you.` : `Preview ready (${r.items} items).`, 5000); viewMeetings(); }
+    catch (e) { toast(e.message, 6000); b.disabled = false; b.textContent = "Try again"; }
+  });
   $("#draftAll").onclick = () => draftMany(ms.filter((m) => m.ready).sort((a, b) => a.date.localeCompare(b.date)).map((m) => m.id));
   $("#importFile").onchange = async (e) => {
     const files = [];
@@ -91,15 +107,25 @@ async function viewMeetings() {
     try { const r = await api("import", { files }); toast(r.done.join(" · "), 6000); viewMeetings(); } catch (err) { toast(err.message, 6000); }
     e.target.value = "";
   };
+  $("#export").onclick = async () => {
+    const data = await api("export");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: "application/json" }));
+    a.download = `localmeetings-export-${new Date().toISOString().slice(0, 10)}.json`; a.click();
+    toast("Saved to your Downloads. Move it into Vote Tracker/data and tell Claude in the chat.", 7000);
+  };
   $("#scan").onclick = async () => { $("#scan").disabled = true; try { const r = await api("scan"); toast(`Found ${r.packets} documents, ${r.created.length} new meetings.${r.city?.error ? " Kokomo site: " + r.city.error : ""}`, 5000); viewMeetings(); } catch (e) { toast(e.message); $("#scan").disabled = false; } };
 }
 const src = (label, ok, na) => na ? `<span class="no" title="Not posted online for this body">${label} n/a</span>` : `<span class="${ok ? "yes" : "no"}">${label} ${ok ? "✓" : "–"}</span>`;
+const LBL = { confirmed: "confirmed", video: "from video", unclear: "unclear", held: "held", hidden: "hidden" };
+const labelSummary = (l = {}) => Object.entries(LBL).filter(([k]) => l[k]).map(([k, t]) => `<span class="lbl ${k}">${l[k]} ${t}</span>`).join(" ");
 function statusText(m) {
-  if (m.status === "drafted") return `<span class="status-drafted">Draft ready</span> <span class="meta">${m.items} items${m.needsCheck ? `, ${m.needsCheck} to check` : ""}${m.minutesArrivedAfterDraft ? ", minutes now posted" : ""}${m.videoArrivedAfterDraft ? ", video now in" : ""}</span>`;
-  if (m.status === "approved") return `<span class="status-approved">Approved</span> <span class="meta">${m.items} items</span>`;
+  if (m.status === "drafted" || m.status === "approved") return `${m.unpublished ? `<span class="status-error">Off the public site</span>` : `<span class="status-approved">Live</span>`}${m.status === "approved" ? ` <span class="meta">(you approved)</span>` : ""} ${labelSummary(m.labels)}${m.needsCheck ? ` <span class="meta">· minutes posted, not checked yet</span>` : ""}${m.videoArrivedAfterDraft ? ` <span class="meta">· video now in</span>` : ""}`;
   if (m.status === "error") return `<span class="status-error">Problem:</span> <span class="meta">${esc(m.error)}</span>`;
   if (m.status === "drafting") return "Drafting…";
   if (m.status === "skipped") return `<span class="muted">Skipped</span>`;
+  if (m.previewError) return `<span class="status-error">Preview problem:</span> <span class="meta">${esc(m.previewError)}</span>`;
+  if (m.hasPreview) return `<span class="status-drafted">Preview live</span>`;
   return m.ready ? "Ready to draft" : `<span class="muted">Waiting</span>`;
 }
 
@@ -113,9 +139,20 @@ async function draftMany(ids) {
     done++;
   }
   toast(failed.length ? `${done - failed.length} drafted, ${failed.length} failed.` : `${done} drafted.`, 5000);
-  FILTER = "review"; store.set("vt-filter", FILTER);
+  FILTER = "live"; store.set("vt-filter2", FILTER);
   await viewMeetings();
   if (failed.length) $("#progress").innerHTML = `<span class="err">${failed.map(esc).join("<br>")}</span>`;
+}
+
+// Held / hidden banner on an item in the editor
+function itemBanner(it, i) {
+  if (it.hidden) return `<div class="hold"><strong>Hidden from the public site.</strong> <button data-resolve="${i}:unhide">Show it</button></div>`;
+  const held = (it.hold && !it.released) || (!CUR.meeting.draftMeta?.schema && it.confidence === "low" && /(disagree|conflict|contradict|mismatch|differ|inconsisten)/i.test(it.checkNote || "") && !it.released && CUR.meeting.status !== "approved");
+  if (!held) return it.verified === "minutes" ? `<div class="meta">✓ Matches the official minutes</div>` : "";
+  const f = it.minutesFix;
+  return `<div class="hold"><strong>Held off the public site:</strong> ${esc(it.hold?.reason || it.checkNote || "the sources disagree")}
+    ${f ? `<div class="meta">Minutes version: ${esc([f.result, f.yes?.length && "yes: " + f.yes.join(", "), f.no?.length && "no: " + f.no.join(", "), f.amount != null && money(f.amount), f.motionBy && "moved by " + f.motionBy].filter(Boolean).join(" · "))}</div>` : ""}
+    <div class="actions" style="margin-top:.4rem">${f ? `<button class="primary" data-resolve="${i}:minutes">Use the minutes' version</button>` : ""}<button data-resolve="${i}:publish">Publish as written</button><button data-resolve="${i}:hide" class="danger">Keep it off</button></div></div>`;
 }
 
 // ---------- Review one meeting
@@ -160,8 +197,10 @@ async function viewMeeting(id) {
         <div class="stickybar actions">
           ${m.status === "approved"
             ? `<button id="saveBtn" class="primary">Save changes</button><button id="unapprove">Move back to drafts</button>`
-            : `<button id="approveBtn" class="primary">Approve</button><button id="saveBtn">Save without approving</button>`}
+            : `<button id="saveBtn" class="primary">Save</button><button id="approveBtn" title="Marks every item confirmed on the public site">Approve all as confirmed</button>`}
           <button id="redraft">Redraft with Claude</button>
+          <button id="pubToggle">${m.unpublished ? "Put back on the public site" : "Take off the public site"}</button>
+          <a class="btn" href="/#/m/${encodeURIComponent(m.id)}" target="_blank" rel="noopener">See it public ↗</a>
           ${m.status !== "approved" ? `<button id="skip" class="danger">Skip this meeting</button>` : ""}
           <span id="saveState" class="meta"></span>
         </div>
@@ -181,6 +220,14 @@ async function viewMeeting(id) {
   if ($("#approveBtn")) $("#approveBtn").onclick = () => save(true);
   if ($("#unapprove")) $("#unapprove").onclick = async () => { await api("unapprove", { id: m.id }); toast("Moved back to drafts."); viewMeeting(m.id); };
   if ($("#skip")) $("#skip").onclick = async () => { if (!confirm("Skip this meeting? It won't be drafted or published. You can undo this from All.")) return; await api("skip", { id: m.id }); location.hash = "#/"; };
+  $("#pubToggle").onclick = async () => { await api("publishMeeting", { id: m.id, on: !!m.unpublished }); toast(m.unpublished ? "Back on the public site." : "Taken off the public site."); viewMeeting(m.id); };
+  $("#items").addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-resolve]"); if (!b) return;
+    if (CUR.dirty && !confirm("You have unsaved edits on this page. They'll be lost. Continue?")) return;
+    const [idx, what] = b.dataset.resolve.split(":");
+    await api("resolve", { id: m.id, idx: +idx, do: what }); CUR.dirty = false;
+    toast(what === "hide" ? "Kept off the public site." : "Published."); viewMeeting(m.id);
+  });
   $("#redraft").onclick = async () => {
     if (CUR.dirty || m.edited) { if (!confirm("Redrafting replaces this draft and your edits. Continue?")) return; }
     $("#redraft").disabled = true; $("#redraft").textContent = "Drafting… about a minute";
@@ -197,6 +244,8 @@ function setPath(obj, path, val) {
   const last = keys[keys.length - 1];
   if (/^(present|absent|yes|no|abstain|sources|terms)$/.test(last)) o[last] = val.split(",").map((s) => s.trim()).filter(Boolean);
   else if (last === "notes") o[last] = val.split("\n").map((s) => s.trim()).filter(Boolean);
+  else if (last === "parties") o[last] = val.split("\n").map((s) => s.trim()).filter(Boolean).map((s) => { const [name, role] = s.split(/\s+[—–-]\s+/); return { name: name.trim(), role: (role || "").trim() }; });
+  else if (last === "flags") { const old = o.flags || []; o[last] = val.split("\n").map((s) => s.trim()).filter(Boolean).map((text) => old.find((f) => f.text === text) || { kind: "other", text }); }
   else if (last === "amount" || last === "videoSeconds") o[last] = val === "" ? null : Number(String(val).replace(/[$,]/g, ""));
   else if (last === "publicCanSpeak") o[last] = !!val;
   else o[last] = val;
@@ -219,7 +268,8 @@ function renderItems() {
           <button data-del="${i}" class="danger" title="Remove item">Remove</button>
         </div>
       </div>
-      ${it.checkNote || it.confidence === "low" ? `<div class="check"><strong>Check:</strong> ${esc(it.checkNote || "Low confidence.")} <span class="meta">(confidence: ${esc(it.confidence)})</span></div>` : ""}
+      ${itemBanner(it, i)}
+      ${it.checkNote || it.confidence === "low" ? `<div class="check"><strong>Note${it.confidence === "low" ? " (shown publicly)" : ""}:</strong> ${esc(it.checkNote || "Low confidence.")} <span class="meta">(confidence: ${esc(it.confidence)})</span></div>` : ""}
       <div class="grid">
         <div class="row">
           <div class="grow"><label>Title</label><input data-p="title" value="${esc(it.title)}"></div>
@@ -253,6 +303,12 @@ function renderItems() {
           <div><label>Date</label><input data-p="nextStep.date" type="date" value="${esc(it.nextStep?.date)}"></div>
           <div><label><input type="checkbox" data-p="nextStep.publicCanSpeak" ${it.nextStep?.publicCanSpeak ? "checked" : ""} style="width:auto"> Public can speak</label></div>
         </div>
+        <div class="row">
+          <div class="grow"><label>Who gets the money or benefit</label><input data-p="recipient" value="${esc(it.recipient)}"></div>
+          <div class="grow"><label>Paid from</label><input data-p="fundingSource" value="${esc(it.fundingSource)}"></div>
+        </div>
+        <div><label>Companies, developers, attorneys involved (one per line: Name — role)</label><textarea data-p="parties" rows="${Math.max(2, (it.parties || []).length + 1)}">${esc((it.parties || []).map((x) => x.role ? `${x.name} — ${x.role}` : x.name).join("\n"))}</textarea></div>
+        <div><label>Research flags, internal only (one per line)</label><textarea data-p="flags" rows="${Math.max(2, (it.flags || []).length + 1)}">${esc((it.flags || []).map((f) => f.text).join("\n"))}</textarea></div>
         <div><label>Notes for organizers (one per line)</label><textarea data-p="notes" rows="${Math.max(2, (it.notes || []).length + 1)}">${esc((it.notes || []).join("\n"))}</textarea></div>
         ${it.quotes?.length ? `<details><summary>Quotes (${it.quotes.length})</summary>${it.quotes.map((q, qi) => `<div class="quote">“${esc(q.text)}”${q.speaker ? ` <span class="meta">— ${esc(q.speaker)}</span>` : ""} ${q.seconds != null && CUR.meeting.videoId ? `<button data-seek="${q.seconds}">▶ ${clock(q.seconds)}</button>` : ""} <button data-delq="${i}:${qi}" class="danger">Remove</button></div>`).join("")}</details>` : ""}
         <div class="meta">Sources: ${esc((it.sources || []).join(", ") || "—")}${it.terms?.length ? ` · Explained terms: ${esc(it.terms.join(", "))}` : ""}</div>
@@ -286,9 +342,8 @@ async function save(andApprove) {
     if (andApprove) {
       await api("approve", { id: m.id, record: CUR.record });
       CUR.dirty = false;
-      const next = (await api("overview")).meetings.filter((x) => x.status === "drafted").sort((a, b) => a.date.localeCompare(b.date))[0];
-      toast(next ? "Approved. Opening the next draft." : "Approved. Nothing else to review.");
-      location.hash = next ? `#/m/${encodeURIComponent(next.id)}` : "#/";
+      toast("Approved: every item shows as confirmed.");
+      viewMeeting(m.id);
     } else {
       await api("save", { id: m.id, record: CUR.record });
       CUR.dirty = false; $("#saveState").textContent = "Saved"; toast("Saved.");
@@ -350,12 +405,13 @@ async function viewIssues() {
   issues.sort((a, b) => (b.lastDate || "").localeCompare(a.lastDate || ""));
   $("#view").innerHTML = `
     <h1>Issues</h1>
-    <p class="muted">Every approved item with an issue key lands on that issue's timeline. These become the public issue pages.</p>
+    <p class="muted">Every published item with an issue key lands on that issue's timeline; these are the public issue pages. <button id="rebuild">Rebuild all timelines</button></p>
     ${issues.length ? issues.map((i) => `<div class="card item">
       <div class="head"><h3>${esc(i.title)}</h3><span class="meta">${esc(i.key)}</span></div>
       ${i.events.map((ev) => `<div class="issue-ev">${fmtDate(ev.date)} · ${BODY_NAMES[ev.body]} · <strong>${esc(ev.stage)}</strong>${ev.result && ev.result !== "no vote" ? ` (${esc(ev.result)})` : ""} · <a href="#/m/${encodeURIComponent(ev.meetingId)}">${esc(ev.title)}</a>${ev.amount != null ? ` · ${money(ev.amount)}` : ""}</div>`).join("")}
       ${i.nextStep?.text ? `<p><strong>Next:</strong> ${esc(i.nextStep.text)}${i.nextStep.date ? ` (${fmtDate(i.nextStep.date)})` : ""}</p>` : ""}
-    </div>`).join("") : `<p class="muted">No approved meetings yet.</p>`}`;
+    </div>`).join("") : `<p class="muted">No issues yet. Click Rebuild if you have published meetings.</p>`}`;
+  $("#rebuild").onclick = async () => { const r = await api("rebuildIssues"); toast(`Rebuilt ${r.issues} issues.`); viewIssues(); };
 }
 
 
@@ -392,6 +448,97 @@ async function viewRef(id) {
     ${groups.map((g) => `<h2>${esc(g)}</h2><table><thead><tr><th>Fund</th><th style="text-align:right">Budget</th><th style="text-align:right">Tax levy</th><th style="text-align:right">Cash end 2026 (est.)</th><th style="text-align:right">Cash end 2027 (est.)</th><th></th></tr></thead><tbody>${r.funds.filter((f) => f.group === g).map((f) => `<tr><td>${esc(f.code)} ${esc(f.name)}</td><td style="text-align:right">${money(f.budget)}</td><td style="text-align:right">${f.levy ? money(f.levy) : "–"}</td><td style="text-align:right">${money(f.cashEnd2026)}</td><td style="text-align:right">${money(f.cashEnd2027)}</td><td>${pg(f.page)}</td></tr>`).join("")}</tbody></table>`).join("")}`;
 }
 
+// ---------- Needs you: held items and error reports
+async function viewQueue() {
+  const { items, reports, bodies } = await api("queue");
+  setBodies(bodies);
+  $("#view").innerHTML = `
+    <h1>Needs you</h1>
+    <p class="muted">Everything else publishes on its own. These items are held off the public site until you decide, and reports come from the "Report an error" link.</p>
+    ${reports.length ? `<h2>Error reports (${reports.length})</h2>${reports.map((r) => `<div class="card item">
+      <div class="head"><h3><a href="#/m/${encodeURIComponent(r.meetingId)}">${esc(r.meetingId)}</a>${r.idx != null ? ` · item ${r.idx + 1}` : ""}</h3><span class="meta">${new Date(r.at).toLocaleString()}</span></div>
+      <p>${esc(r.text)}</p>${r.contact ? `<p class="meta">Reply to: ${esc(r.contact)}</p>` : ""}
+      <div class="actions"><a class="btn" href="#/m/${encodeURIComponent(r.meetingId)}">Open meeting</a><button data-dismiss="${esc(r.id)}">Done</button></div></div>`).join("")}` : ""}
+    <h2>Held items (${items.length})</h2>
+    ${items.length ? items.map((it) => {
+      const v = it.vote || {}, f = it.minutesFix;
+      return `<div class="card item">
+        <div class="head"><h3>${esc(it.title)}</h3><span class="meta">${esc(BODY_NAMES[it.body] || it.body)} · ${fmtDate(it.date)}</span></div>
+        <div class="hold"><strong>Why it's held:</strong> ${esc(it.reason)}</div>
+        <p>${esc(it.whatItIs)}</p>
+        <p class="meta">As written: ${esc([v.result, v.method, v.yes?.length && "yes: " + v.yes.join(", "), v.no?.length && "no: " + v.no.join(", "), it.amount != null && money(it.amount), it.motionBy && "moved by " + it.motionBy].filter(Boolean).join(" · "))}</p>
+        ${f ? `<p class="meta"><strong>Minutes say:</strong> ${esc(f.minutesSay || [f.result, f.yes?.length && "yes: " + f.yes.join(", "), f.no?.length && "no: " + f.no.join(", "), f.amount != null && money(f.amount)].filter(Boolean).join(" · "))}</p>` : ""}
+        <div class="actions">
+          ${f ? `<button class="primary" data-q="${esc(it.meetingId)}|${it.idx}|minutes">Use the minutes' version</button>` : ""}
+          <button data-q="${esc(it.meetingId)}|${it.idx}|publish">Publish as written</button>
+          <button class="danger" data-q="${esc(it.meetingId)}|${it.idx}|hide">Keep it off</button>
+          <a class="btn" href="#/m/${encodeURIComponent(it.meetingId)}">Edit</a>
+          ${it.videoId && it.videoSeconds != null ? `<a class="btn" href="https://www.youtube.com/watch?v=${esc(it.videoId)}&t=${it.videoSeconds}s" target="_blank" rel="noopener">Watch ▶ ${clock(it.videoSeconds)}</a>` : ""}
+        </div></div>`;
+    }).join("") : `<p class="muted">Nothing held. Everything is live.</p>`}`;
+  $("#view").onclick = async (e) => {
+    const q = e.target.closest("[data-q]"), d = e.target.closest("[data-dismiss]");
+    if (q) { const [id, idx, what] = q.dataset.q.split("|"); q.disabled = true; await api("resolve", { id, idx: +idx, do: what }); toast(what === "hide" ? "Kept off." : "Published."); viewQueue(); }
+    if (d) { await api("dismissReport", { id: d.dataset.dismiss }); viewQueue(); }
+  };
+}
+
+// ---------- Research (internal only): flags, quotes, money, repeat players
+let INS = null;
+const normName = (n) => String(n).toLowerCase().replace(/[.,'’]/g, "").replace(/\b(llc|inc|incorporated|co|corp|corporation|company|ltd|lp|llp|pc)\b/g, "").replace(/&/g, "and").replace(/\s+/g, " ").trim();
+async function viewResearch(tab) {
+  INS = INS && tab !== "refresh" ? INS : await api("insights");
+  if (tab === "refresh") tab = "flags";
+  setBodies(INS.bodies);
+  const tabs = [["flags", `Flags (${INS.flags.length})`], ["quotes", `Quotes (${INS.quotes.length})`], ["money", `Money (${INS.money.length})`], ["players", "Repeat players"]];
+  $("#view").innerHTML = `
+    <div class="toolbar"><div><h1>Research</h1><div class="meta">Internal only. Includes held items. Never shown on the public site.</div></div>
+      <div class="actions"><a class="btn" href="#/research/refresh">Refresh</a></div></div>
+    <div class="filter" style="margin-bottom:.8rem">${tabs.map(([k, l]) => `<a class="btn ${tab === k ? "on primary" : ""}" href="#/research/${k}">${l}</a>`).join(" ")}</div>
+    <div class="filter" style="margin-bottom:.8rem"><input id="rq" placeholder="Filter: a name, a company, a word…" style="max-width:360px"> <select id="rgov" style="width:auto"><option value="">County and city</option><option value="county">County</option><option value="city">City of Kokomo</option></select></div>
+    <div id="rout"></div>`;
+  const link = (x) => `<a href="#/m/${encodeURIComponent(x.meetingId)}">${fmtDate(x.date)} · ${esc(BODY_NAMES[x.body] || x.body)}</a>`;
+  const watch = (x, s) => x.videoId && s != null ? ` <a href="https://www.youtube.com/watch?v=${esc(x.videoId)}&t=${s}s" target="_blank" rel="noopener">▶ ${clock(s)}</a>` : "";
+  const draw = () => {
+    const q = $("#rq").value.trim().toLowerCase(), gov = $("#rgov").value;
+    const keep = (x, text) => (!gov || x.gov === gov) && (!q || text.toLowerCase().includes(q));
+    let html = "";
+    if (tab === "flags") {
+      const rows = INS.flags.filter((x) => keep(x, `${x.text} ${x.itemTitle} ${x.kind}`));
+      html = rows.length ? rows.map((x) => `<div class="card item"><div class="meta">${link(x)} · <strong>${esc(x.kind)}</strong>${watch(x, x.seconds)}</div><p>${esc(x.text)}</p><div class="meta">${esc(x.itemTitle)}</div></div>`).join("") : `<p class="muted">No flags${q ? " match" : " yet"}. New drafts add them; older ones get them when Claude enriches the export in a chat.</p>`;
+    } else if (tab === "quotes") {
+      const speakers = {};
+      const rows = INS.quotes.filter((x) => keep(x, `${x.speaker} ${x.text} ${x.itemTitle}`));
+      for (const x of rows) speakers[x.speaker || "Unknown"] = (speakers[x.speaker || "Unknown"] || 0) + 1;
+      html = `<p class="meta">${Object.entries(speakers).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([n, c]) => `<a href="#" data-speaker="${esc(n)}">${esc(n)} (${c})</a>`).join(" · ")}</p>` +
+        (rows.length ? rows.slice(0, 400).map((x) => `<div class="quote card">“${esc(x.text)}” <div class="meta">— ${esc(x.speaker || "unknown")} · ${link(x)} · ${esc(x.itemTitle)}${watch(x, x.seconds)}</div></div>`).join("") : `<p class="muted">Nothing.</p>`);
+    } else if (tab === "money") {
+      const rows = INS.money.filter((x) => keep(x, `${x.title} ${x.recipient} ${x.fundingSource} ${x.category} ${x.docNumber} ${(x.parties || []).map((p) => p.name).join(" ")}`));
+      const total = rows.filter((x) => ["passed", ""].includes(x.result) || ["adopted", "approved"].includes(x.stage)).reduce((a, x) => a + (x.amount || 0), 0);
+      const byCat = {};
+      for (const x of rows) byCat[x.category] = (byCat[x.category] || 0) + x.amount;
+      html = `<p class="meta">${rows.length} items · ${money(total)} approved or adopted · ${Object.entries(byCat).sort((a, b) => b[1] - a[1]).map(([c, a]) => `${esc(c)} ${money(a)}`).join(" · ")}</p>
+        <table><thead><tr><th>Date</th><th>Item</th><th>To</th><th>From</th><th style="text-align:right">Amount</th><th>Result</th></tr></thead><tbody>
+        ${rows.map((x) => `<tr><td>${link(x)}</td><td>${esc(x.title)}${x.docNumber ? `<div class="meta">${esc(x.docNumber)}</div>` : ""}</td><td>${esc(x.recipient || (x.parties || []).map((p) => p.name).join(", "))}</td><td>${esc(x.fundingSource)}</td><td style="text-align:right">${money(x.amount)}</td><td>${esc(x.result || x.stage)}</td></tr>`).join("")}</tbody></table>`;
+    } else {
+      const groups = new Map();
+      for (const x of INS.parties.filter((x) => keep(x, `${x.name} ${x.role} ${x.itemTitle}`))) {
+        const k = normName(x.name);
+        const g = groups.get(k) || { name: x.name, roles: new Set(), items: [], total: 0, meetings: new Set(), bodies: new Set() };
+        g.roles.add(x.role); g.items.push(x); g.meetings.add(x.meetingId); g.bodies.add(x.body); if (x.amount) g.total += x.amount;
+        groups.set(k, g);
+      }
+      const list = [...groups.values()].sort((a, b) => b.meetings.size - a.meetings.size || b.total - a.total);
+      html = list.length ? `<p class="meta">Sorted by how many meetings they show up in. Names are matched loosely (LLC, Inc. and punctuation ignored).</p>` + list.map((g) => `<details class="card item" ${list.length < 6 ? "open" : ""}><summary><strong>${esc(g.name)}</strong> <span class="meta">· ${[...g.roles].filter(Boolean).join(", ")} · ${g.meetings.size} meeting${g.meetings.size === 1 ? "" : "s"} · ${[...g.bodies].map((b) => BODY_NAMES[b] || b).join(", ")}${g.total ? ` · ${money(g.total)}` : ""}</span></summary>
+        ${g.items.map((x) => `<div class="issue-ev">${link(x)} · ${esc(x.itemTitle)}${x.amount ? ` · ${money(x.amount)}` : ""}${x.result ? ` · ${esc(x.result)}` : ""}</div>`).join("")}</details>`).join("") : `<p class="muted">No companies or developers tagged yet. New drafts tag them; older drafts get them when Claude enriches the export in a chat.</p>`;
+    }
+    $("#rout").innerHTML = html;
+  };
+  $("#rq").oninput = draw; $("#rgov").onchange = draw;
+  $("#rout").onclick = (e) => { const a = e.target.closest("[data-speaker]"); if (a) { e.preventDefault(); $("#rq").value = a.dataset.speaker === "Unknown" ? "" : a.dataset.speaker; draw(); } };
+  draw();
+}
+
 // ---------- Settings
 async function viewSettings() {
   OV = await api("overview"); setBodies(OV.bodies);
@@ -413,9 +560,11 @@ async function viewSettings() {
         <button data-addr="${body}">Add member</button>`).join("")}
       <p class="actions" style="margin-top:1rem"><button id="saveRoster" class="primary">Save members</button></p>
     </div>
+    <h2>Ask page (core group)</h2>
+    <div class="card" id="askBox"><p class="muted">Loading…</p></div>
     <h2>Daily check</h2>
     <div class="card">
-      <p>Runs every morning: looks for new agenda packets on the county site, then drafts up to two meetings that have everything they need.</p>
+      <p>Runs every morning: looks for new agendas and minutes, drafts up to two meetings that have everything they need, checks up to four drafts against minutes that came out since, and writes previews for up to two upcoming agendas. All of these use the Claude API.</p>
       <button id="runNow">Run it now</button> <span id="runOut" class="meta"></span>
       ${OV.lastRun ? `<pre class="meta" style="white-space:pre-wrap">${esc(JSON.stringify(OV.lastRun, null, 1))}</pre>` : ""}
     </div>`;
@@ -427,12 +576,52 @@ async function viewSettings() {
     });
     await api("roster", { roster: out }); toast("Saved.");
   };
+  askSettings();
   $("#runNow").onclick = async () => {
     $("#runNow").disabled = true; $("#runOut").textContent = "Running… this can take a few minutes if it drafts.";
-    try { const r = await fetch("/api/cron", { headers: { "x-admin-code": CODE } }).then((x) => x.json()); $("#runOut").textContent = r.error ? r.error : `Found ${r.scan.packets} packets; drafted ${r.drafted.length}; ${r.queued} were ready.`; } catch (e) { $("#runOut").textContent = e.message; }
+    try { const r = await fetch("/api/cron", { headers: { "x-admin-code": CODE } }).then((x) => x.json()); $("#runOut").textContent = r.error ? r.error : `Found ${r.scan.packets} documents; drafted ${r.drafted.length}, checked ${r.checked?.length || 0} against minutes, previewed ${r.previewed?.length || 0}.${r.errors?.length ? " Problems: " + r.errors.join("; ") : ""}`; } catch (e) { $("#runOut").textContent = e.message; }
     $("#runNow").disabled = false;
   };
 }
+// Ask page: access codes, limits and the question log
+const cents = (c) => (c == null ? "" : c < 100 ? `${Math.round(c * 10) / 10}¢` : `$${(c / 100).toFixed(2)}`);
+async function askSettings(newCode) {
+  const d = await api("members");
+  const box = $("#askBox");
+  box.innerHTML = `
+    <p>People sign in at <a href="/ask.html" target="_blank" rel="noopener">${esc(location.origin)}/ask.html</a> with a code you give them. You can use it with your review code, no separate sign-in.</p>
+    ${newCode ? `<div class="hold" style="background:var(--soft);border-color:var(--accent)"><strong>Code for ${esc(newCode.member.name)}:</strong> <code style="font-size:1.1rem">${esc(newCode.code)}</code><div class="meta">Copy it now. It isn't shown again; if it's lost, turn this one off and make a new one.</div></div>` : ""}
+    <p><strong>${cents(d.monthCents)}</strong> spent this month of a <strong>${cents(d.config.monthlyCents)}</strong> limit.</p>
+    <div class="row" style="align-items:flex-end;margin-bottom:1rem">
+      <div><label>Monthly limit for everyone ($)</label><input id="capM" type="number" min="0" step="1" value="${d.config.monthlyCents / 100}"></div>
+      <div><label>Default daily limit per person ($)</label><input id="capD" type="number" min="0" step="0.25" value="${d.config.dailyCents / 100}"></div>
+      <div><button id="saveCaps">Save limits</button></div>
+    </div>
+    <table><thead><tr><th>Name</th><th>Can see research</th><th>Daily limit</th><th>Today</th><th>Code</th></tr></thead><tbody>
+      ${d.members.map((m) => `<tr><td>${esc(m.name)}</td><td><input type="checkbox" data-research="${m.id}" ${m.research ? "checked" : ""} style="width:auto"></td><td><input data-daily="${m.id}" type="number" min="0" step="0.25" placeholder="default" value="${m.dailyCents != null ? m.dailyCents / 100 : ""}" style="width:7rem"></td><td>${cents(m.today)}</td><td>${m.active ? `<button data-off="${m.id}" class="danger">Turn off</button>` : `<span class="muted">Off</span> <button data-on="${m.id}">Turn on</button>`}</td></tr>`).join("") || `<tr><td colspan="5" class="muted">No one yet.</td></tr>`}
+    </tbody></table>
+    <div class="row" style="align-items:flex-end;margin-top:.8rem">
+      <div class="grow"><label>Add someone</label><input id="mName" placeholder="Name"></div>
+      <div><label><input id="mResearch" type="checkbox" style="width:auto"> Can see research (flags, repeat players)</label></div>
+      <div><button id="addMember" class="primary">Create code</button></div>
+    </div>
+    <details style="margin-top:1rem"><summary>Recent questions (${d.log.length})</summary>
+      ${d.log.map((e) => `<div class="issue-ev"><strong>${esc(e.memberName)}</strong> · ${new Date(e.at).toLocaleString()} · ${esc(e.mode)} · ${cents(e.costCents)}${e.pinned ? " · pinned" : ""}<div>${esc(e.question)}</div><div class="meta">${esc(e.answer)}</div></div>`).join("") || `<p class="muted">None yet.</p>`}
+    </details>`;
+  $("#saveCaps").onclick = async () => { await api("askConfig", { monthlyCents: Math.round(+$("#capM").value * 100), dailyCents: Math.round(+$("#capD").value * 100) }); toast("Limits saved."); askSettings(); };
+  $("#addMember").onclick = async () => { const name = $("#mName").value.trim(); if (!name) return toast("Add a name."); const r = await api("addMember", { name, research: $("#mResearch").checked }); askSettings(r); };
+  box.onchange = async (e) => {
+    const t = e.target;
+    if (t.dataset.research) { await api("updateMember", { id: t.dataset.research, patch: { research: t.checked } }); toast("Saved."); }
+    if (t.dataset.daily !== undefined && t.dataset.daily) { await api("updateMember", { id: t.dataset.daily, patch: { dailyCents: t.value === "" ? null : Math.round(+t.value * 100) } }); toast("Saved."); }
+  };
+  box.onclick = async (e) => {
+    const t = e.target.closest("button"); if (!t) return;
+    if (t.dataset.off) { await api("updateMember", { id: t.dataset.off, patch: { active: false } }); askSettings(); }
+    if (t.dataset.on) { await api("updateMember", { id: t.dataset.on, patch: { active: true } }); askSettings(); }
+  };
+}
+
 const rosterRow = (r) => `<div class="row rrow" style="margin-bottom:.4rem">
   <div class="grow"><input name="n" placeholder="Name" value="${esc(r.name)}"></div>
   <div><input name="t" placeholder="Title (optional)" value="${esc(r.title)}"></div>

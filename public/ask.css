@@ -1,0 +1,29 @@
+.narrowcard { max-width: 520px; margin: 40px auto; }
+.asknav { display: flex; align-items: center; gap: 14px; }
+.asknav a { padding: 4px 0; }
+@media (max-width: 760px) { .asknav { display: flex; width: auto; padding: 0; } .menu { display: none; } }
+.asklabel { display: block; font-weight: 700; font-size: 1.15rem; margin-bottom: 8px; }
+#q { width: 100%; font: inherit; padding: 12px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); resize: vertical; }
+.askrow { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+.modes { display: flex; gap: 16px; flex-wrap: wrap; }
+.modes label { display: flex; gap: 6px; align-items: center; font-weight: 600; cursor: pointer; }
+#examples { margin: 12px 0 4px; }
+#examples .chip { font-weight: 500; text-align: left; }
+.answer { padding: 22px; }
+.answer .q { font-weight: 700; font-size: 1.15rem; margin-bottom: 10px; }
+.md p { margin: 0 0 .8em; }
+.md ul, .md ol { margin: 0 0 .8em; padding-left: 22px; }
+.md li { margin: 4px 0; }
+.md h3, .md h4 { margin: 1em 0 .4em; font-size: 1.05rem; }
+.md table { margin: 8px 0 14px; display: block; overflow-x: auto; }
+.cite { display: inline-block; font-size: .8rem; font-weight: 700; padding: 0 7px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); text-decoration: none; vertical-align: 1px; margin: 0 1px; }
+.cite:hover { background: var(--accent); color: var(--accent-ink); }
+.sourcesl { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 10px; font-size: .9rem; }
+.sourcesl li { margin: 3px 0; }
+.ansfoot { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; color: var(--soft); font-size: .88rem; margin-top: 12px; }
+.list .card { padding: 12px 14px; margin-bottom: 8px; cursor: pointer; }
+.list .card:hover { border-color: var(--accent); }
+.list .meta { font-size: .85rem; }
+.thinking { color: var(--soft); }
+.thinking::after { content: ""; display: inline-block; width: 1.2em; text-align: left; animation: dots 1.2s steps(4) infinite; }
+@keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }

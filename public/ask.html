@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Ask · Local Meetings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css">
+<link rel="stylesheet" href="/ask.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22 rx=%223%22 fill=%22%230e5c58%22/%3E%3C/svg%3E">
+</head>
+<body>
+<header class="site">
+  <div class="wrap bar">
+    <a class="brand" href="/ask.html">Ask <span>Local Meetings</span></a>
+    <nav id="nav" class="asknav"><span id="who" class="muted"></span><a href="/" target="_blank" rel="noopener">Public site</a><button id="signout" class="linkbtn" hidden>Sign out</button></nav>
+  </div>
+</header>
+<main class="wrap" id="main">
+  <section id="signin" class="card narrowcard" hidden>
+    <h1>Sign in</h1>
+    <p class="muted">Enter the access code Nolan gave you.</p>
+    <form id="signinForm" class="searchbox"><input id="code" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. maple-river-1234" aria-label="Access code" required><button>Sign in</button></form>
+    <p id="signinErr" class="err"></p>
+  </section>
+  <section id="app" hidden>
+    <form id="askForm" class="card">
+      <label for="q" class="asklabel">Ask about votes, spending, rezonings, officials, budgets…</label>
+      <textarea id="q" rows="3" maxlength="1500" placeholder="Which TIF-funded items has the Kokomo council approved this year, and did anyone vote no?"></textarea>
+      <div class="askrow">
+        <div class="modes" role="radiogroup" aria-label="Depth">
+          <label><input type="radio" name="mode" value="quick" checked> Quick <span class="muted small">about 1–3¢</span></label>
+          <label><input type="radio" name="mode" value="deep"> Deep <span class="muted small">about 10–30¢, for patterns</span></label>
+        </div>
+        <button class="primary" id="askBtn">Ask</button>
+      </div>
+      <div id="examples" class="filters"></div>
+      <p id="spend" class="muted small"></p>
+    </form>
+    <div id="answer"></div>
+    <div class="two">
+      <section><h2>Pinned for the group</h2><div id="pinned" class="list"></div></section>
+      <section><h2>Your recent questions</h2><div id="mine" class="list"></div></section>
+    </div>
+  </section>
+</main>
+<script src="/ask.js" type="module"></script>
+</body>
+</html>
