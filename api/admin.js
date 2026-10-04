@@ -1,6 +1,6 @@
 // Everything the review screen needs, behind ADMIN_CODE.
 import { listMeetings, getMeeting, saveMeeting, listVideos, getVideo, listIssues, getJSON, setJSON, listRefs, getRef, redis, getMany } from "../lib/store.js";
-import { approve, unapprove, assignVideo, scanPackets, getRoster, readyToDraft, normalizeRecord, importFiles, rebuildAllIssues, rebuildIssuesFor, resolveItem, exportForChat, needsCheck, needsPreview } from "../lib/pipeline.js";
+import { approve, unapprove, assignVideo, scanPackets, getRoster, readyToDraft, normalizeRecord, importFiles, rebuildAllIssues, rebuildIssuesFor, resolveItem, exportForChat, needsCheck, needsPreview, needsEnrich } from "../lib/pipeline.js";
 import { itemLabel, recordOf } from "../lib/publish.js";
 import { insights } from "../lib/insights.js";
 import { listMembers, createMember, updateMember, askConfig, askLog, spendStatus, ADMIN_MEMBER } from "../lib/ask.js";
@@ -16,7 +16,7 @@ const slim = (m) => { normalizeRecord(m.draft); normalizeRecord(m.record); retur
   minutesArrivedAfterDraft: !!m.minutesArrivedAfterDraft, videoArrivedAfterDraft: !!m.videoArrivedAfterDraft,
   ready: (m.status === "waiting" || m.status === "error") && readyToDraft(m),
   labels: (recordOf(m)?.items || []).reduce((a, it) => { const l = itemLabel(m, it); a[l] = (a[l] || 0) + 1; return a; }, {}),
-  unpublished: !!m.unpublished, needsCheck: needsCheck(m), needsPreview: !!needsPreview(m), hasPreview: !!m.preview, previewError: m.previewError || "",
+  unpublished: !!m.unpublished, needsCheck: needsCheck(m), needsEnrich: needsEnrich(m), needsPreview: !!needsPreview(m), hasPreview: !!m.preview, previewError: m.previewError || "",
   minutesCheck: m.minutesCheck || null,
 }; };
 

@@ -60,6 +60,8 @@ async function viewMeetings() {
     waiting: (m) => m.status === "waiting" && !m.ready && m.date < new Date().toISOString().slice(0, 10), all: () => true,
   };
   const counts = Object.fromEntries(Object.entries(F).map(([k, f]) => [k, ms.filter(f).length]));
+  const toFill = OV.meetings.filter((m) => m.needsEnrich || m.needsCheck);
+  counts.fill = toFill.length;
   if (!F[FILTER]) FILTER = "live";
   const show = ms.filter(F[FILTER]);
   const unsorted = OV.videos.filter((v) => !v.meetingId && !["other", "budget"].includes(v.body)).length;
@@ -72,6 +74,7 @@ async function viewMeetings() {
       </div>
       <div class="actions">
         <label class="btn" title="Drafts, minutes checks or reference documents made in a Claude chat (.json)">Import<input id="importFile" type="file" accept=".json,application/json" multiple hidden></label>
+        ${counts.fill ? `<button id="fillOld" class="primary" title="Uses the Claude API">Fill in older meetings (${counts.fill})</button>` : ""}
         <button id="export" title="Download every draft so Claude can check them against minutes in a chat, on your plan">Export for Claude</button>
         <button id="scan">Check for new documents</button>
         <button id="draftAll" class="primary" ${counts.ready ? "" : "disabled"}>Draft all ready (${counts.ready})</button>
@@ -107,6 +110,7 @@ async function viewMeetings() {
     try { const r = await api("import", { files }); toast(r.done.join(" · "), 6000); viewMeetings(); } catch (err) { toast(err.message, 6000); }
     e.target.value = "";
   };
+  if ($("#fillOld")) $("#fillOld").onclick = () => fillOlder(toFill);
   $("#export").onclick = async () => {
     const data = await api("export");
     const a = document.createElement("a");
@@ -118,7 +122,7 @@ async function viewMeetings() {
 }
 const src = (label, ok, na) => na ? `<span class="no" title="Not posted online for this body">${label} n/a</span>` : `<span class="${ok ? "yes" : "no"}">${label} ${ok ? "✓" : "–"}</span>`;
 const LBL = { confirmed: "confirmed", video: "from video", unclear: "unclear", held: "held", hidden: "hidden" };
-const labelSummary = (l = {}) => Object.entries(LBL).filter(([k]) => l[k]).map(([k, t]) => `<span class="lbl ${k}">${l[k]} ${t}</span>`).join(" ");
+const labelSummary = (l = {}) => Object.entries(LBL).filter(([k]) => l[k]).map(([k, t]) => `<span class="lbl l-${k}">${l[k]} ${t}</span>`).join(" ");
 function statusText(m) {
   if (m.status === "drafted" || m.status === "approved") return `${m.unpublished ? `<span class="status-error">Off the public site</span>` : `<span class="status-approved">Live</span>`}${m.status === "approved" ? ` <span class="meta">(you approved)</span>` : ""} ${labelSummary(m.labels)}${m.needsCheck ? ` <span class="meta">· minutes posted, not checked yet</span>` : ""}${m.videoArrivedAfterDraft ? ` <span class="meta">· video now in</span>` : ""}`;
   if (m.status === "error") return `<span class="status-error">Problem:</span> <span class="meta">${esc(m.error)}</span>`;
@@ -153,6 +157,25 @@ function itemBanner(it, i) {
   return `<div class="hold"><strong>Held off the public site:</strong> ${esc(it.hold?.reason || it.checkNote || "the sources disagree")}
     ${f ? `<div class="meta">Minutes version: ${esc([f.result, f.yes?.length && "yes: " + f.yes.join(", "), f.no?.length && "no: " + f.no.join(", "), f.amount != null && money(f.amount), f.motionBy && "moved by " + f.motionBy].filter(Boolean).join(" · "))}</div>` : ""}
     <div class="actions" style="margin-top:.4rem">${f ? `<button class="primary" data-resolve="${i}:minutes">Use the minutes' version</button>` : ""}<button data-resolve="${i}:publish">Publish as written</button><button data-resolve="${i}:hide" class="danger">Keep it off</button></div></div>`;
+}
+
+// Older drafts: fill in companies/money/flags (text only, ~2-3¢ each), then check against minutes where they're out (~5-15¢ each).
+async function fillOlder(list) {
+  const nE = list.filter((m) => m.needsEnrich).length, nC = list.filter((m) => m.needsCheck).length;
+  const est = (nE * 3 + nC * 12) / 100;
+  if (!confirm(`This uses the Claude API.\n\n${nE} meetings get companies, money and research flags filled in (about 2-3¢ each).\n${nC} meetings get checked against their official minutes (about 5-15¢ each).\n\nEstimated total: about $${Math.max(0.5, est).toFixed(2)}. You'll see the real cost as it goes. Keep this tab open; you can close it to stop.`)) return;
+  const p = $("#progress");
+  document.querySelectorAll(".toolbar button").forEach((b) => (b.disabled = true));
+  let spent = 0, done = 0, failed = [], held = 0;
+  const jobs = [...list.filter((m) => m.needsEnrich).map((m) => [m.id, "enrich"]), ...list.filter((m) => m.needsCheck).sort((a, b) => b.date.localeCompare(a.date)).map((m) => [m.id, "check"])];
+  for (const [id, kind] of jobs) {
+    p.textContent = `${kind === "enrich" ? "Filling in" : "Checking minutes for"} ${id.replace(/-(\d{4})/, " $1")} (${done + 1} of ${jobs.length}) · spent so far $${(spent / 100).toFixed(2)}`;
+    try { const r = await api("", { id, kind }, "/api/draft"); spent += r.cents || 0; if (r.check?.conflicts) held += r.check.conflicts; } catch (e) { failed.push(`${id} (${kind}): ${e.message}`); }
+    done++;
+  }
+  toast(`Done: ${done - failed.length} of ${jobs.length} · spent $${(spent / 100).toFixed(2)}${held ? ` · ${held} item(s) held for you in Needs you` : ""}`, 9000);
+  await viewMeetings();
+  $("#progress").innerHTML = `Last run spent $${(spent / 100).toFixed(2)}.${held ? ` <a href="#/queue">${held} item(s) held for you</a>.` : ""}${failed.length ? `<br><span class="err">${failed.map(esc).join("<br>")}</span>` : ""}`;
 }
 
 // ---------- Review one meeting
