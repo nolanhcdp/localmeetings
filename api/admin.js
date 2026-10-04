@@ -1,18 +1,18 @@
 // Everything the review screen needs, behind ADMIN_CODE.
 import { listMeetings, getMeeting, saveMeeting, listVideos, getVideo, listIssues, getJSON, setJSON, redis } from "../lib/store.js";
-import { approve, unapprove, assignVideo, scanPackets, getRoster, readyToDraft } from "../lib/pipeline.js";
+import { approve, unapprove, assignVideo, scanPackets, getRoster, readyToDraft, normalizeRecord } from "../lib/pipeline.js";
 import { BODIES, GLOSSARY } from "../lib/county.js";
 import { json, fail, isAdmin } from "../lib/http.js";
 export const config = { maxDuration: 60 };
 
-const slim = (m) => ({
+const slim = (m) => { normalizeRecord(m.draft); normalizeRecord(m.record); return {
   id: m.id, body: m.body, date: m.date, title: m.title || "", status: m.status,
   hasPacket: !!m.packetUrl, hasMinutes: !!m.minutesUrl, hasVideo: !!m.videoId, hasTranscript: !!m.hasTranscript, edited: !!m.edited,
   items: (m.record || m.draft)?.items?.length || 0, error: m.error || "",
   needsCheck: ((m.record || m.draft)?.items || []).filter((i) => i.confidence === "low" || i.checkNote).length,
   minutesArrivedAfterDraft: !!m.minutesArrivedAfterDraft, videoArrivedAfterDraft: !!m.videoArrivedAfterDraft,
   ready: (m.status === "waiting" || m.status === "error") && readyToDraft(m),
-});
+}; };
 
 export async function POST(request) {
   if (!isAdmin(request)) return fail("Wrong admin code", 401);
@@ -26,6 +26,7 @@ export async function POST(request) {
       case "meeting": {
         const m = await getMeeting(p.id);
         if (!m) return fail("No such meeting", 404);
+        normalizeRecord(m.draft); normalizeRecord(m.record);
         const v = m.videoId ? await getVideo(m.videoId) : null;
         return json({ meeting: m, video: v ? { videoId: v.videoId, title: v.title, date: v.date, duration: v.duration, lineCount: v.lines?.length || 0 } : null, glossary: GLOSSARY, bodies: BODIES });
       }
