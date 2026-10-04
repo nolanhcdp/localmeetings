@@ -15,7 +15,7 @@ const setBodies = (bodies) => { if (bodies) BODY_NAMES = Object.fromEntries(Obje
 function toast(msg, ms = 2600) { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), ms); }
 const fmtDate = (d) => new Date(d + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
 const clock = (s) => { s = Math.max(0, s | 0); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60; return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(x).padStart(2, "0"); };
-const money = (n) => n == null || n === "" ? "" : Number(n).toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
+const money = (n) => n == null || n === "" ? "" : Number(n).toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: Number.isInteger(Number(n)) ? 0 : 2, maximumFractionDigits: 2 });
 
 async function api(action, body = {}, path = "/api/admin") {
   const res = await fetch(path, { method: "POST", headers: { "content-type": "application/json", "x-admin-code": CODE }, body: JSON.stringify({ action, ...body }) });
@@ -33,11 +33,13 @@ window.addEventListener("hashchange", route);
 async function route() {
   if (!CODE) return showLogin();
   const h = location.hash.slice(1) || "/";
-  document.querySelectorAll(".top nav a").forEach((a) => a.classList.toggle("on", a.getAttribute("href") === "#" + h || (h.startsWith("/m/") && a.getAttribute("href") === "#/")));
+  document.querySelectorAll(".top nav a").forEach((a) => a.classList.toggle("on", a.getAttribute("href") === "#" + h || (h.startsWith("/m/") && a.getAttribute("href") === "#/") || (h.startsWith("/ref/") && a.getAttribute("href") === "#/library")));
   try {
     if (h.startsWith("/m/")) return await viewMeeting(decodeURIComponent(h.slice(3)));
     if (h === "/videos") return await viewVideos();
     if (h === "/issues") return await viewIssues();
+    if (h === "/library") return await viewLibrary();
+    if (h.startsWith("/ref/")) return await viewRef(decodeURIComponent(h.slice(5)));
     if (h === "/settings") return await viewSettings();
     return await viewMeetings();
   } catch (e) { if (e.message !== "auth") $("#view").innerHTML = `<p class="err">${esc(e.message)}</p>`; }
@@ -60,6 +62,7 @@ async function viewMeetings() {
         <div class="meta">${lr ? `Last daily check ${new Date(lr.at).toLocaleString()}${lr.errors?.length ? ` · <span class="err">${lr.errors.length} problem(s)</span>` : ""}` : "The daily check hasn't run yet."}${unsorted ? ` · <a href="#/videos">${unsorted} video(s) need a meeting</a>` : ""}</div>
       </div>
       <div class="actions">
+        <label class="btn" title="Drafts or reference documents made outside the app (.json)">Import<input id="importFile" type="file" accept=".json,application/json" multiple hidden></label>
         <button id="scan">Check for new documents</button>
         <button id="draftAll" class="primary" ${counts.ready ? "" : "disabled"}>Draft all ready (${counts.ready})</button>
       </div>
@@ -82,6 +85,12 @@ async function viewMeetings() {
   document.querySelectorAll("[data-f]").forEach((b) => b.onclick = () => { FILTER = b.dataset.f; store.set("vt-filter", FILTER); viewMeetings(); });
   document.querySelectorAll("[data-draft]").forEach((b) => b.onclick = () => draftMany([b.dataset.draft]));
   $("#draftAll").onclick = () => draftMany(ms.filter((m) => m.ready).sort((a, b) => a.date.localeCompare(b.date)).map((m) => m.id));
+  $("#importFile").onchange = async (e) => {
+    const files = [];
+    try { for (const f of e.target.files) files.push(JSON.parse(await f.text())); } catch (err) { return toast("One of those files isn't valid JSON."); }
+    try { const r = await api("import", { files }); toast(r.done.join(" · "), 6000); viewMeetings(); } catch (err) { toast(err.message, 6000); }
+    e.target.value = "";
+  };
   $("#scan").onclick = async () => { $("#scan").disabled = true; try { const r = await api("scan"); toast(`Found ${r.packets} documents, ${r.created.length} new meetings.${r.city?.error ? " Kokomo site: " + r.city.error : ""}`, 5000); viewMeetings(); } catch (e) { toast(e.message); $("#scan").disabled = false; } };
 }
 const src = (label, ok, na) => na ? `<span class="no" title="Not posted online for this body">${label} n/a</span>` : `<span class="${ok ? "yes" : "no"}">${label} ${ok ? "✓" : "–"}</span>`;
@@ -132,6 +141,8 @@ async function viewMeeting(id) {
           ${m.minutesUrl ? ` · <a href="${esc(m.minutesUrl)}" target="_blank" rel="noopener">${m.minutesDate && m.minutesDate !== m.date ? `Minutes (in ${fmtDate(m.minutesDate)} packet)` : `Minutes${m.minutesName && /draft/i.test(m.minutesName) ? " (draft)" : ""}`}</a>` : ""}
           ${m.packetError ? ` · <span class="err">${esc(m.packetError)}</span>` : ""}
           ${dm.truncated ? ` · <span class="err">Draft was cut off; consider redrafting.</span>` : ""}
+          ${dm.imported ? ` · Imported draft` : ""}
+          ${(m.references || []).map((r) => ` · <a href="#/ref/${encodeURIComponent(r)}">Reference: ${esc(r)}</a>`).join("")}
         </p>
         ${m.minutesArrivedAfterDraft ? `<div class="check">Official minutes were posted after this draft. Redraft to fold them in${m.edited ? " (this replaces your edits)" : ""}.</div>` : ""}
         ${m.videoArrivedAfterDraft ? `<div class="check">The video arrived after this draft. Redraft to add votes and quotes from it${m.edited ? " (this replaces your edits)" : ""}.</div>` : ""}
@@ -345,6 +356,40 @@ async function viewIssues() {
       ${i.events.map((ev) => `<div class="issue-ev">${fmtDate(ev.date)} · ${BODY_NAMES[ev.body]} · <strong>${esc(ev.stage)}</strong>${ev.result && ev.result !== "no vote" ? ` (${esc(ev.result)})` : ""} · <a href="#/m/${encodeURIComponent(ev.meetingId)}">${esc(ev.title)}</a>${ev.amount != null ? ` · ${money(ev.amount)}` : ""}</div>`).join("")}
       ${i.nextStep?.text ? `<p><strong>Next:</strong> ${esc(i.nextStep.text)}${i.nextStep.date ? ` (${fmtDate(i.nextStep.date)})` : ""}</p>` : ""}
     </div>`).join("") : `<p class="muted">No approved meetings yet.</p>`}`;
+}
+
+
+// ---------- Library (reference documents like adopted budgets)
+async function viewLibrary() {
+  const { refs } = await api("refs");
+  refs.sort((a, b) => (b.adopted || "").localeCompare(a.adopted || ""));
+  $("#view").innerHTML = `
+    <h1>Library</h1>
+    <p class="muted">Adopted documents the drafts can lean on, like budgets. Claude gets a short version of these when drafting meetings of the same government. Add more with Import on the Meetings page.</p>
+    ${refs.length ? refs.map((r) => `<div class="card item"><div class="head"><h3><a href="#/ref/${encodeURIComponent(r.id)}">${esc(r.title)}</a></h3><span class="meta">${esc(r.docNumber || "")}${r.adopted ? ` · adopted ${fmtDate(r.adopted)}` : ""}</span></div><p>${esc(r.summary || "")}</p></div>`).join("") : `<p class="muted">Nothing here yet.</p>`}`;
+}
+async function viewRef(id) {
+  const { ref: r } = await api("ref", { id });
+  if (!r) { $("#view").innerHTML = `<p class="err">Not found.</p>`; return; }
+  const pg = (p) => p && r.source?.url ? ` <a class="meta" href="${esc(r.source.url)}#page=${p}" target="_blank" rel="noopener">p. ${p}</a>` : "";
+  const groups = [...new Set((r.funds || []).map((f) => f.group))];
+  const pct = (a, b) => b ? Math.round((a / b) * 1000) / 10 + "%" : "";
+  $("#view").innerHTML = `
+    <p><a href="#/library">← Library</a></p>
+    <h1>${esc(r.title)}</h1>
+    <p class="meta">${esc(r.docNumber || "")}${r.adopted ? ` · adopted ${fmtDate(r.adopted)} by ${esc(r.adoptedBy || "")}` : ""}${r.source?.url ? ` · <a href="${esc(r.source.url)}" target="_blank" rel="noopener">${esc(r.source.label || "Source")}</a>` : ""}${r.meetingId ? ` · <a href="#/m/${encodeURIComponent(r.meetingId)}">Meeting record</a>` : ""}</p>
+    <div class="card"><p>${esc(r.summary || "")}</p></div>
+    ${r.totals ? `<h2>Totals</h2><table><tbody>
+      <tr><td>All funds</td><td style="text-align:right"><strong>${money(r.totals.allFunds)}</strong></td></tr>
+      <tr><td>General Fund</td><td style="text-align:right">${money(r.totals.generalFund)}</td></tr>
+      <tr><td>Other property-tax funds</td><td style="text-align:right">${money(r.totals.otherPropertyTaxFunds)}</td></tr>
+      <tr><td>Non-property-tax funds</td><td style="text-align:right">${money(r.totals.nonPropertyTaxFunds)}</td></tr>
+      <tr><td>TIF funds</td><td style="text-align:right">${money(r.totals.tifFunds)}</td></tr>
+      ${r.tax ? `<tr><td>Property tax rate</td><td style="text-align:right">$${r.tax.rate} per $100${pg(r.tax.page)}</td></tr><tr><td>Property tax levy</td><td style="text-align:right">${money(r.tax.levy)}</td></tr><tr><td>Expected loss to tax caps</td><td style="text-align:right">${money(r.tax.estimatedCapLossAllFunds)}</td></tr>` : ""}
+    </tbody></table>` : ""}
+    ${r.observations?.length ? `<h2>Worth knowing</h2><div class="card">${r.observations.map((o) => `<p>${esc(o.text)}${pg(o.page)}</p>`).join("")}</div>` : ""}
+    ${r.generalFundDepartments?.length ? `<h2>General Fund by department</h2><table><thead><tr><th>Department</th><th style="text-align:right">2027</th><th style="text-align:right">Share</th></tr></thead><tbody>${[...r.generalFundDepartments].sort((a, b) => b.amount - a.amount).map((d) => `<tr><td>${esc(d.name)}</td><td style="text-align:right">${money(d.amount)}</td><td style="text-align:right">${pct(d.amount, r.totals?.generalFund)}</td></tr>`).join("")}</tbody></table>` : ""}
+    ${groups.map((g) => `<h2>${esc(g)}</h2><table><thead><tr><th>Fund</th><th style="text-align:right">Budget</th><th style="text-align:right">Tax levy</th><th style="text-align:right">Cash end 2026 (est.)</th><th style="text-align:right">Cash end 2027 (est.)</th><th></th></tr></thead><tbody>${r.funds.filter((f) => f.group === g).map((f) => `<tr><td>${esc(f.code)} ${esc(f.name)}</td><td style="text-align:right">${money(f.budget)}</td><td style="text-align:right">${f.levy ? money(f.levy) : "–"}</td><td style="text-align:right">${money(f.cashEnd2026)}</td><td style="text-align:right">${money(f.cashEnd2027)}</td><td>${pg(f.page)}</td></tr>`).join("")}</tbody></table>`).join("")}`;
 }
 
 // ---------- Settings

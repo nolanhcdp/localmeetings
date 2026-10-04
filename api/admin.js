@@ -1,6 +1,6 @@
 // Everything the review screen needs, behind ADMIN_CODE.
-import { listMeetings, getMeeting, saveMeeting, listVideos, getVideo, listIssues, getJSON, setJSON, redis } from "../lib/store.js";
-import { approve, unapprove, assignVideo, scanPackets, getRoster, readyToDraft, normalizeRecord } from "../lib/pipeline.js";
+import { listMeetings, getMeeting, saveMeeting, listVideos, getVideo, listIssues, getJSON, setJSON, listRefs, getRef } from "../lib/store.js";
+import { approve, unapprove, assignVideo, scanPackets, getRoster, readyToDraft, normalizeRecord, importFiles } from "../lib/pipeline.js";
 import { BODIES, GLOSSARY } from "../lib/county.js";
 import { json, fail, isAdmin } from "../lib/http.js";
 export const config = { maxDuration: 60 };
@@ -53,6 +53,9 @@ export async function POST(request) {
       case "scan": return json(await scanPackets());
       case "roster": await setJSON("config:roster", p.roster); return json({ ok: true });
       case "issues": return json({ issues: await listIssues() });
+      case "import": return json({ ok: true, done: await importFiles(p.files || []) });
+      case "refs": return json({ refs: (await listRefs()).map(({ funds, generalFundDepartments, otherPropertyTaxDepartments, ...r }) => r) });
+      case "ref": return json({ ref: await getRef(p.id) });
       default: return fail("Unknown action");
     }
   } catch (e) { return fail(e, 500); }
