@@ -277,16 +277,17 @@ async function pageBudget(id) {
   view.innerHTML = `<p class="meta"><a href="#/budget">Budgets</a></p>
     <h1>${esc(r.title)}</h1>
     <p class="summary">${esc(r.summary)}</p>
-    <p class="muted small">${esc(r.docNumber || "")}${r.adopted ? `, adopted ${esc(dLong(r.adopted))}` : ""}${r.adoptedBy ? ` by the ${esc(r.adoptedBy.replace(/^the /i, ""))}` : ""}.${r.meetingId ? ` <a href="#/m/${esc(r.meetingId)}">See the meeting</a>.` : ""}${r.source?.url ? ` <a href="${esc(r.source.url)}" target="_blank" rel="noopener">Source document</a>.` : ""}</p>
+    <p class="muted small">${esc(r.docNumber || "")}${r.adopted ? `, adopted ${esc(dLong(r.adopted))}` : ""}${r.adoptedBy ? `${r.adopted || r.docNumber ? " by the" : "Adopted by the"} ${esc(r.adoptedBy.replace(/^the /i, ""))}` : ""}.${r.meetingId ? ` <a href="#/m/${esc(r.meetingId)}">See the meeting</a>.` : ""}${r.source?.url ? ` <a href="${esc(r.source.url)}" target="_blank" rel="noopener">Source document</a>.` : ""}</p>
     <div class="stats">
-      <div class="stat"><b>${money(t.allFunds)}</b><span>all funds</span></div>
+      <div class="stat"><b>${money(t.allFunds)}</b><span>${esc(t.allFundsLabel || "all funds")}</span></div>
       <div class="stat"><b>${money(t.generalFund)}</b><span>General Fund (day-to-day services)</span></div>
       ${tax.rate ? `<div class="stat"><b>$${esc(tax.rate)}</b><span>property tax rate per $100 of assessed value</span></div>` : ""}
       ${tax.estimatedCapLossAllFunds ? `<div class="stat"><b>${money(Math.abs(tax.estimatedCapLossAllFunds))}</b><span>expected loss to state tax caps</span></div>` : ""}
     </div>
     ${(r.observations || []).length ? `<h2>What stands out</h2>${r.observations.map((o) => `<p>${esc(o.text || o)}${o.page ? ` <span class="muted small">(p. ${o.page})</span>` : ""}</p>`).join("")}` : ""}
     ${depts.length ? `<h2>Where the General Fund goes</h2><div class="tablewrap"><table><tbody>${depts.map((x) => `<tr><td>${esc(x.name)}</td><td class="bar-cell"><div class="hbar" style="width:${(x.amount / max) * 100}%"></div></td><td class="num">${exact(x.amount)}</td></tr>`).join("")}</tbody></table></div>` : ""}
-    ${Object.entries(groups).map(([g, fs]) => `<h2>${esc(g)}</h2><div class="tablewrap"><table><thead><tr><th>Fund</th><th class="num">2027 budget</th><th class="num">Cash at end of 2027</th></tr></thead><tbody>${fs.map((f) => `<tr><td>${esc(f.name)}${f.page ? ` <span class="small muted">p. ${f.page}</span>` : ""}</td><td class="num">${exact(f.budget)}</td><td class="num">${f.cashEnd2027 != null ? exact(f.cashEnd2027) : ""}</td></tr>`).join("")}</tbody></table></div>`).join("")}`;
+    ${Object.entries(groups).map(([g, fs]) => { const y = r.year, prev = fs.some((f) => f[`budget${y - 1}`] != null), cash = fs.some((f) => f[`cashEnd${y}`] != null); return `<h2>${esc(g)}</h2><div class="tablewrap"><table><thead><tr><th>Fund</th>${prev ? `<th class="num">${y - 1}</th>` : ""}<th class="num">${y} budget</th>${cash ? `<th class="num">Cash at end of ${y}</th>` : ""}</tr></thead><tbody>${fs.map((f) => `<tr><td>${esc(f.name)}${f.page ? ` <span class="small muted">p. ${f.page}</span>` : ""}</td>${prev ? `<td class="num muted">${exact(f[`budget${y - 1}`])}</td>` : ""}<td class="num">${exact(f.budget)}</td>${cash ? `<td class="num">${f[`cashEnd${y}`] != null ? exact(f[`cashEnd${y}`]) : ""}</td>` : ""}</tr>`).join("")}</tbody></table></div>`; }).join("")}
+    ${r.history?.length ? `<h2>Over the years</h2><div class="tablewrap"><table><thead><tr><th>Year</th><th class="num">Budget</th><th class="bar-cell"></th><th class="num">Property tax levy</th></tr></thead><tbody>${r.history.slice().reverse().map((h) => `<tr><td>${h.year}</td><td class="num">${money(h.budget)}</td><td class="bar-cell"><div class="hbar" style="width:${(h.budget / Math.max(...r.history.map((x) => x.budget))) * 100}%"></div></td><td class="num">${money(h.levy)}</td></tr>`).join("")}</tbody></table></div>` : ""}`;
 }
 
 function pageAbout() {
