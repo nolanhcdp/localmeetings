@@ -65,22 +65,49 @@ document.querySelector(".menu").addEventListener("click", (e) => {
 });
 
 // ---- pages
+const STATE_NOTE = {
+  cancelled: "Canceled.",
+  scheduled: "Agenda not posted yet. Boards usually post it a few days ahead.",
+  agenda: "The agenda is posted. A plain-language summary is on its way.",
+};
+function stateTags(u) {
+  return [u.cancelled ? `<span class="tag failed">Canceled</span>` : "", u.maybeCanceled ? `<span class="tag unclear">May be canceled</span>` : "", u.special ? `<span class="tag hearing">${esc(u.special)}</span>` : "", u.estimated ? `<span class="tag">Usual schedule, not confirmed</span>` : ""].filter(Boolean).join(" ");
+}
 function upcomingCard(u, { full = false } = {}) {
   const rel = relDay(u.date);
   const items = full ? u.items : u.items.slice(0, 4);
   const hearings = u.items.filter((i) => i.publicHearing).length;
-  return `<article class="card">
+  const tags = stateTags(u);
+  return `<article class="card${u.state === "scheduled" || u.cancelled ? " quiet" : ""}">
     <a href="#/m/${esc(u.id)}" style="color:inherit;text-decoration:none">
       <div class="when">${rel ? `${rel}, ` : ""}${esc(dt(u.date, { weekday: rel ? undefined : "short", month: "short", day: "numeric" }))}${u.time ? ` · ${esc(u.time)}` : ""}</div>
       <div class="who">${esc(u.bodyName)}</div>
     </a>
-    ${u.location ? `<div class="meta">${esc(u.location)}</div>` : ""}
-    ${u.summary ? `<p style="margin-top:10px">${esc(u.summary)}</p>` : `<p class="muted" style="margin-top:10px">The agenda is posted. A plain-language preview is on its way.</p>`}
+    ${tags ? `<div style="margin-top:6px">${tags}</div>` : ""}
+    ${u.location && !u.cancelled ? `<div class="meta">${esc(u.location)}</div>` : ""}
+    ${u.summary ? `<p style="margin-top:10px">${esc(u.summary)}</p>` : `<p class="muted small" style="margin-top:10px">${STATE_NOTE[u.state] || ""}</p>`}
     ${items.length ? `<ul class="agenda">${items.map((i) => `<li><span class="t">${esc(i.title)}</span>${i.publicHearing ? ` <span class="tag hearing">Public hearing</span>` : ""}${i.amount ? ` <span class="muted">· ${money(i.amount)}</span>` : ""}${full ? `<div>${esc(i.whatItIs)}</div>${i.whyItMatters ? `<div class="muted">${esc(i.whyItMatters)}</div>` : ""}${i.step ? `<div class="small muted">${esc(i.step)}${i.location ? ` · ${esc(i.location)}` : ""}${i.issue ? ` · <a href="#/i/${esc(i.issue.key)}">Follow this issue</a>` : ""}</div>` : ""}` : ""}</li>`).join("")}</ul>` : ""}
     ${!full && u.items.length > 4 ? `<p class="small" style="margin:8px 0 0"><a href="#/m/${esc(u.id)}">${u.items.length - 4} more on the agenda</a></p>` : ""}
     ${(full || hearings) && u.howToComment ? `<div class="how"><b>How to weigh in:</b> ${esc(u.howToComment)}</div>` : ""}
     ${u.packetUrl ? `<div class="meta" style="margin-top:10px"><a href="${esc(u.packetUrl)}" target="_blank" rel="noopener">Full agenda packet (PDF)</a></div>` : ""}
   </article>`;
+}
+
+async function pageCalendar(body) {
+  setNav("calendar"); title("Calendar");
+  const d = await api({ view: "calendar" });
+  const list = d.meetings.filter((u) => !body || u.body === body);
+  const groups = {};
+  for (const u of list) (groups[u.date.slice(0, 7)] ||= []).push(u);
+  view.innerHTML = `<h1>Meeting calendar</h1>
+    <p class="muted">Every scheduled meeting for the next four months. Agendas and plain-language summaries fill in as each board posts its packet.</p>
+    <div class="filters"><a class="chip ${body ? "" : "on"}" href="#/calendar">All boards</a>${Object.entries(d.bodies).map(([k, b]) => `<a class="chip ${body === k ? "on" : ""}" href="#/calendar/${k}">${esc(b.short)}</a>`).join("")}</div>
+    ${Object.entries(groups).map(([ym, us]) => `<h2>${esc(new Date(ym + "-15T12:00").toLocaleDateString("en-US", { month: "long", year: "numeric" }))}</h2>
+      <div class="tablewrap"><table><tbody>${us.map((u) => `<tr${u.cancelled ? ' class="muted"' : ""}>
+        <td style="white-space:nowrap"><b>${esc(dt(u.date, { weekday: "short", month: "short", day: "numeric" }))}</b><div class="small muted">${esc(u.time || "Time not posted")}</div></td>
+        <td><a href="#/m/${esc(u.id)}">${esc(u.bodyName)}</a>${u.special ? ` · ${esc(u.special)}` : ""}<div class="small muted">${u.summary ? esc(u.summary.slice(0, 160)) + (u.summary.length > 160 ? "…" : "") : esc(STATE_NOTE[u.state] || "")}</div></td>
+        <td style="text-align:right">${stateTags({ ...u, special: "" }) || (u.state === "previewed" ? `<span class="tag confirmed">Agenda summary</span>` : u.state === "agenda" ? `<span class="tag">Agenda posted</span>` : "")}</td>
+      </tr>`).join("")}</tbody></table></div>`).join("") || `<p class="muted">Nothing scheduled.</p>`}`;
 }
 
 function meetingRow(m) {
@@ -106,7 +133,8 @@ async function pageHome() {
     <h1>What local government is deciding next</h1>
     <p class="muted summary">Howard County and the City of Kokomo, in plain language. See what's on the agenda before the meeting, how to weigh in, and what happened after.</p>
     <section class="upcoming">
-      ${d.upcoming.length ? `<div class="grid">${d.upcoming.map((u) => upcomingCard(u)).join("")}</div>` : `<div class="card muted">No upcoming agendas are posted yet. Boards usually post them a few days ahead.</div>`}
+      ${d.upcoming.length ? `<div class="grid">${d.upcoming.map((u) => upcomingCard(u)).join("")}</div>` : `<div class="card muted">Nothing scheduled in the next two weeks.</div>`}
+      <p style="margin-top:12px"><a href="#/calendar">Full meeting calendar</a></p>
     </section>
     ${d.ahead.length ? `<h2>Dates to watch</h2><div class="tablewrap"><table><tbody>${d.ahead.map((a) => `<tr><td style="white-space:nowrap"><b>${esc(dt(a.date, { weekday: "short", month: "short", day: "numeric" }))}</b></td><td><a href="#/i/${esc(a.key)}">${esc(a.title)}</a><div class="small muted">${esc(a.text)}</div></td><td>${a.publicCanSpeak ? `<span class="tag hearing">Public can speak</span>` : ""}</td></tr>`).join("")}</tbody></table></div>` : ""}
     <h2>Recently decided</h2>
@@ -340,6 +368,7 @@ async function route() {
     if (!parts.length) await pageHome();
     else if (parts[0] === "meetings") await pageMeetings(parts[1]);
     else if (parts[0] === "m") await pageMeeting(parts[1]);
+    else if (parts[0] === "calendar") await pageCalendar(parts[1]);
     else if (parts[0] === "issues") await pageIssues();
     else if (parts[0] === "i") await pageIssue(parts[1]);
     else if (parts[0] === "officials") await pageOfficials();

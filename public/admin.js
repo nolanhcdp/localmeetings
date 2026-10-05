@@ -70,13 +70,13 @@ async function viewMeetings() {
     <div class="toolbar">
       <div>
         <h1>Meetings</h1>
-        <div class="meta">${lr ? `Last daily check ${new Date(lr.at).toLocaleString()}${lr.errors?.length ? ` · <span class="err">${lr.errors.length} problem(s)</span>` : ""}` : "The daily check hasn't run yet."}${unsorted ? ` · <a href="#/videos">${unsorted} video(s) need a meeting</a>` : ""}</div>
+        <div class="meta">${lr ? `Last daily run ${new Date(lr.at).toLocaleString()}${lr.errors?.length ? ` · <span class="err">${lr.errors.length} problem(s)</span>` : ""}` : "The daily run hasn't happened yet."}${OV.lastTick?.at ? ` · Last quick check ${new Date(OV.lastTick.at).toLocaleString()}${OV.lastTick.calendar?.cityError ? ` · <span class="err">City calendar: ${esc(OV.lastTick.calendar.cityError)}</span>` : ""}` : ""}${unsorted ? ` · <a href="#/videos">${unsorted} video(s) need a meeting</a>` : ""}</div>
       </div>
       <div class="actions">
         <label class="btn" title="Drafts, minutes checks or reference documents made in a Claude chat (.json)">Import<input id="importFile" type="file" accept=".json,application/json" multiple hidden></label>
         ${counts.fill ? `<button id="fillOld" class="primary" title="Uses the Claude API">Fill in older meetings (${counts.fill})</button>` : ""}
         <button id="export" title="Download every draft so Claude can check them against minutes in a chat, on your plan">Export for Claude</button>
-        <button id="scan">Check for new documents</button>
+        <button id="scan" title="Checks the calendars and both document pages, and previews any meeting in the next two days that has a new agenda">Check now</button>
         <button id="draftAll" class="primary" ${counts.ready ? "" : "disabled"}>Draft all ready (${counts.ready})</button>
       </div>
     </div>
@@ -118,7 +118,15 @@ async function viewMeetings() {
     a.download = `localmeetings-export-${new Date().toISOString().slice(0, 10)}.json`; a.click();
     toast("Saved to your Downloads. Move it into Vote Tracker/data and tell Claude in the chat.", 7000);
   };
-  $("#scan").onclick = async () => { $("#scan").disabled = true; try { const r = await api("scan"); toast(`Found ${r.packets} documents, ${r.created.length} new meetings.${r.city?.error ? " Kokomo site: " + r.city.error : ""}`, 5000); viewMeetings(); } catch (e) { toast(e.message); $("#scan").disabled = false; } };
+  $("#scan").onclick = async () => {
+    $("#scan").disabled = true; $("#scan").textContent = "Checking… up to a couple of minutes";
+    try {
+      const r = await fetch("/api/tick", { headers: { "x-admin-code": CODE } }).then((x) => x.json());
+      if (r.error) throw new Error(r.error);
+      toast(`Calendars: ${r.calendar?.created || 0} new scheduled meetings${r.calendar?.missing ? `, ${r.calendar.missing} may be canceled` : ""}. Documents: ${r.scan?.created?.length || 0} new. Previewed: ${r.previewed?.length || 0}.${r.errors?.length ? " Problems: " + r.errors.join("; ") : ""}${r.calendar?.cityError ? " City calendar: " + r.calendar.cityError : ""}`, 9000);
+      viewMeetings();
+    } catch (e) { toast(e.message, 6000); $("#scan").disabled = false; $("#scan").textContent = "Check now"; }
+  };
 }
 const src = (label, ok, na) => na ? `<span class="no" title="Not posted online for this body">${label} n/a</span>` : `<span class="${ok ? "yes" : "no"}">${label} ${ok ? "✓" : "–"}</span>`;
 const LBL = { confirmed: "confirmed", video: "from video", unclear: "unclear", held: "held", hidden: "hidden" };
@@ -129,7 +137,9 @@ function statusText(m) {
   if (m.status === "drafting") return "Drafting…";
   if (m.status === "skipped") return `<span class="muted">Skipped</span>`;
   if (m.previewError) return `<span class="status-error">Preview problem:</span> <span class="meta">${esc(m.previewError)}</span>`;
+  if (m.cancelled) return `<span class="muted">Canceled</span>`;
   if (m.hasPreview) return `<span class="status-drafted">Preview live</span>`;
+  if (m.date >= new Date().toISOString().slice(0, 10) && m.scheduled) return `${m.hasPacket ? `<span class="status-drafted">Agenda posted, preview next check</span>` : `<span class="muted">Scheduled${m.scheduled.time ? ` ${esc(m.scheduled.time)}` : ""}${m.scheduled.estimated ? " (usual schedule)" : ""}</span>`}${m.scheduled.missing ? ` <span class="err">dropped off the city calendar</span>` : ""}`;
   return m.ready ? "Ready to draft" : `<span class="muted">Waiting</span>`;
 }
 

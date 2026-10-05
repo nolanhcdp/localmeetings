@@ -17,7 +17,7 @@ const slim = (m) => { normalizeRecord(m.draft); normalizeRecord(m.record); retur
   ready: (m.status === "waiting" || m.status === "error") && readyToDraft(m),
   labels: (recordOf(m)?.items || []).reduce((a, it) => { const l = itemLabel(m, it); a[l] = (a[l] || 0) + 1; return a; }, {}),
   unpublished: !!m.unpublished, needsCheck: needsCheck(m), needsEnrich: needsEnrich(m), needsPreview: !!needsPreview(m), hasPreview: !!m.preview, previewError: m.previewError || "",
-  minutesCheck: m.minutesCheck || null,
+  minutesCheck: m.minutesCheck || null, scheduled: m.scheduled || null, cancelled: !!m.cancelled,
 }; };
 
 export async function POST(request) {
@@ -28,8 +28,8 @@ export async function POST(request) {
       case "overview": {
         // One-time: issue timelines used to hold only approved meetings; now every published meeting counts.
         if (!(await getJSON("migrate:issues2"))) { await rebuildAllIssues(); await setJSON("migrate:issues2", { at: new Date().toISOString() }); }
-        const [meetings, videos, lastRun, roster] = await Promise.all([listMeetings(), listVideos(), getJSON("status:lastRun"), getRoster()]);
-        return json({ meetings: meetings.map(slim), videos, lastRun, roster, bodies: BODIES });
+        const [meetings, videos, lastRun, roster, lastTick] = await Promise.all([listMeetings(), listVideos(), getJSON("status:lastRun"), getRoster(), getJSON("status:lastTick")]);
+        return json({ meetings: meetings.map(slim), videos, lastRun, lastTick, roster, bodies: BODIES });
       }
       case "meeting": {
         const m = await getMeeting(p.id);

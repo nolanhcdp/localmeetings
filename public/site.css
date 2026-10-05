@@ -140,3 +140,6 @@ dialog textarea, dialog input { display: block; width: 100%; margin-top: 6px; fo
 dialog .row { display: flex; justify-content: flex-end; gap: 8px; }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 @media (max-width: 700px) { .two { grid-template-columns: 1fr; } .item { padding: 16px; } }
+.upcoming .card.quiet { border-left-color: var(--line); }
+.upcoming .card.quiet .when { font-size: 1.1rem; }
+tr.muted td { color: var(--faint); }
