@@ -23,7 +23,7 @@ export async function GET(request) {
     }
     if (!out) return fail("Not found", 404);
     const res = json(out);
-    res.headers.set("Cache-Control", "public, s-maxage=300, stale-while-revalidate=3600");
+    res.headers.set("Cache-Control", "public, s-maxage=60, stale-while-revalidate=60");
     return res;
   } catch (e) { return fail(e, 500); }
 }
