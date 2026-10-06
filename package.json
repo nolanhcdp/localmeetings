@@ -1,1 +1,1 @@
-{ "name": "vote-tracker", "private": true, "type": "module" }
+{"name":"vote-tracker","private":true,"type":"module","dependencies":{"@vercel/analytics":"^2.0.1"}}

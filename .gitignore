@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Build artifacts and cache
+.vercel/
+.cache/
+dist/
+build/
+
+# Local development
+.DS_Store
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+coverage/
+
+# Project-specific (from existing repo context)
+data/
