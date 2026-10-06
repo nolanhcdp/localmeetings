@@ -123,7 +123,7 @@ async function viewMeetings() {
     try {
       const r = await fetch("/api/tick", { headers: { "x-admin-code": CODE } }).then((x) => x.json());
       if (r.error) throw new Error(r.error);
-      toast(`Calendars: ${r.calendar?.created || 0} new scheduled meetings${r.calendar?.missing ? `, ${r.calendar.missing} may be canceled` : ""}. Documents: ${r.scan?.created?.length || 0} new. Previewed: ${r.previewed?.length || 0}.${r.errors?.length ? " Problems: " + r.errors.join("; ") : ""}${r.calendar?.cityError ? " City calendar: " + r.calendar.cityError : ""}`, 9000);
+      toast(`Calendars: ${r.calendar?.created || 0} new scheduled meetings${r.calendar?.missing ? `, ${r.calendar.missing} may be canceled` : ""}. Documents: ${r.scan?.created?.length || 0} new. Previewed: ${r.previewed?.length || 0}. Drafted: ${r.drafted?.length || 0}.${r.errors?.length ? " Problems: " + r.errors.join("; ") : ""}${r.calendar?.cityError ? " City calendar: " + r.calendar.cityError : ""}`, 9000);
       viewMeetings();
     } catch (e) { toast(e.message, 6000); $("#scan").disabled = false; $("#scan").textContent = "Check now"; }
   };
