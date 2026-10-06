@@ -260,7 +260,7 @@ td.num, th.num { text-align: right; white-space: nowrap; font-variant-numeric: t
 .treemap a.sm b { font-family: var(--body); font-size: .9rem; }
 .treemap a span { font-size: .82rem; opacity: .92; }
 .bars { display: flex; align-items: flex-end; gap: 5px; height: 140px; }
-.bars div { flex: 1; background: var(--council); border-radius: 2px 2px 0 0; opacity: .45; }
+.bars div { flex: 1; background: var(--board, var(--council)); border-radius: 2px 2px 0 0; opacity: .45; }
 .bars div:last-child { opacity: 1; }
 .bars div:nth-last-child(2), .bars div:nth-last-child(3) { opacity: .7; }
 
