@@ -28,7 +28,7 @@ const daysUntil = (d) => Math.round((new Date(d + "T12:00:00") - new Date(new Da
 const relDay = (d) => { const n = daysUntil(d); return n === 0 ? "Today" : n === 1 ? "Tomorrow" : n > 1 && n < 7 ? `This ${dt(d, { weekday: "long" })}` : ""; };
 const ts = (s) => { s = Math.max(0, s | 0); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60; return (h ? `${h}:${String(m).padStart(2, "0")}` : `${m}`) + `:${String(x).padStart(2, "0")}`; };
 const yt = (id, s) => `https://www.youtube.com/watch?v=${encodeURIComponent(id)}${s != null ? `&t=${s | 0}s` : ""}`;
-const title = (t) => (document.title = t ? `${t} · Second Reading` : "Second Reading · Howard County and Kokomo");
+const title = (t) => (document.title = t ? `${t} · Second Reading` : "Second Reading · Every meeting. Every vote. Kokomo and Howard County.");
 const list = (a) => (a.length <= 2 ? a.join(" and ") : `${a.slice(0, -1).join(", ")} and ${a.at(-1)}`);
 
 const LABEL = {
