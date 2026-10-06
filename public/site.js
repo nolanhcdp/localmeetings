@@ -541,6 +541,8 @@ async function route() {
   const [path] = location.hash.replace(/^#/, "").split("#item-");
   const parts = path.split("/").filter(Boolean).map(decodeURIComponent);
   window.scrollTo(0, 0);
+  // Vercel Analytics sees only the part of the URL before the #, so report each view with a readable path
+  try { const route = "/" + ({ m: "meeting", i: "issue", o: "official" }[parts[0]] || parts[0] || ""); window.va?.("pageview", { route, path: "/" + parts.join("/") }); } catch (e) {}
   try {
     if (!parts.length) await pageHome();
     else if (parts[0] === "meetings") await pageMeetings(parts[1]);
