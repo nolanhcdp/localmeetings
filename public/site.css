@@ -1,4 +1,4 @@
-/* Local Meetings. A light paper page with white panels; a color per board; outcomes as marks; mustard only for things to act on. */
+/* Second Reading. A light paper page with white panels; a color per board; outcomes as marks; mustard only for things to act on. */
 :root {
   --paper: #f4f3ef; --panel: #ffffff; --ink: #1c1c1c; --soft: #444444; --faint: #5c5c5c; --line: #d9d6cf; --hair: #ebe9e3;
   --link: #1f2a44;
@@ -54,7 +54,8 @@ p { margin: 0 0 .8em; }
 /* header */
 header.site { background: var(--panel); border-bottom: 1px solid var(--line); }
 .bar { display: flex; align-items: center; gap: 10px 28px; min-height: 60px; flex-wrap: wrap; padding: 8px 20px; }
-.brand { text-decoration: none; color: var(--ink); display: flex; align-items: baseline; gap: 10px; margin-right: auto; }
+.brand { text-decoration: none; color: var(--ink); display: flex; align-items: center; gap: 10px; margin-right: auto; }
+.brand img { width: 30px; height: 30px; border-radius: 6px; flex: none; }
 .brand b { font-family: var(--display); font-size: 1.7rem; font-weight: 700; }
 .brand span { font-size: .92rem; color: var(--faint); }
 nav { display: flex; gap: 2px 20px; flex-wrap: wrap; }
@@ -63,7 +64,8 @@ nav a:hover { color: var(--ink); border-bottom-color: var(--line); }
 nav a.on { border-bottom-color: var(--ink); }
 .menu { display: none; }
 @media (max-width: 760px) {
-  .brand { flex-direction: column; gap: 0; }
+  .brand { flex: 1 1 0; min-width: 0; flex-wrap: wrap; gap: 0 10px; }
+  .brand span { flex-basis: 100%; padding-left: 40px; margin-top: -4px; }
   .menu { display: block; background: none; border: 1px solid var(--line); color: var(--ink); padding: 6px 12px; font: inherit; font-weight: 600; border-radius: 4px; }
   nav { display: none; width: 100%; padding-bottom: 8px; }
   nav.open { display: flex; }

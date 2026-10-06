@@ -28,7 +28,7 @@ const daysUntil = (d) => Math.round((new Date(d + "T12:00:00") - new Date(new Da
 const relDay = (d) => { const n = daysUntil(d); return n === 0 ? "Today" : n === 1 ? "Tomorrow" : n > 1 && n < 7 ? `This ${dt(d, { weekday: "long" })}` : ""; };
 const ts = (s) => { s = Math.max(0, s | 0); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60; return (h ? `${h}:${String(m).padStart(2, "0")}` : `${m}`) + `:${String(x).padStart(2, "0")}`; };
 const yt = (id, s) => `https://www.youtube.com/watch?v=${encodeURIComponent(id)}${s != null ? `&t=${s | 0}s` : ""}`;
-const title = (t) => (document.title = t ? `${t} · Local Meetings` : "Local Meetings · Howard County and Kokomo");
+const title = (t) => (document.title = t ? `${t} · Second Reading` : "Second Reading · Howard County and Kokomo");
 const list = (a) => (a.length <= 2 ? a.join(" and ") : `${a.slice(0, -1).join(", ")} and ${a.at(-1)}`);
 
 const LABEL = {
@@ -478,7 +478,8 @@ async function pageBudget(id) {
 function pageAbout() {
   setNav(""); title("How this works");
   view.innerHTML = `<h1>How this works</h1>
-  <p>Local Meetings follows the boards that make the biggest decisions in Howard County and Kokomo: the County Council and Commissioners, the County Plan Commission, the Kokomo Common Council, Plan Commission, Board of Zoning Appeals and Board of Public Works and Safety.</p>
+  <p>A second reading is the vote where an ordinance actually passes. This site is a second reading of the public record for people who weren't in the room.</p>
+  <p>Second Reading follows the boards that make the biggest decisions in Howard County and Kokomo: the County Council and Commissioners, the County Plan Commission, the Kokomo Common Council, Plan Commission, Board of Zoning Appeals and Board of Public Works and Safety.</p>
   <h2>Where it comes from</h2>
   <p>Every day it checks the county and city websites for new agendas and minutes and the official YouTube channels for meeting videos. AI reads them and writes a plain-language summary of each item: what it is, why it matters, how the vote went and what happens next. Every item links back to the source document or the moment in the video.</p>
   <h2>What the labels mean</h2>
