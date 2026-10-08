@@ -76,7 +76,18 @@ export async function POST(request) {
           });
         }
         out.sort((a, b) => b.date.localeCompare(a.date));
-        const broken = (await listMeetings()).filter((m) => { const r = recordOf(m); return r && (m.draftProblem || (r.summary && !(r.items || []).length)); }).map((m) => ({ meetingId: m.id, body: m.body, date: m.date, problem: m.draftProblem || "The draft has a summary but no items; redraft it.", truncated: !!m.draftMeta?.truncated })).sort((a, b) => b.date.localeCompare(a.date));
+        const broken = [];
+        for (const m of (await listMeetings()).filter((m) => { const r = recordOf(m); return r && (m.draftProblem || (r.summary && !(r.items || []).length)); })) {
+          // Raw, un-normalized copy straight from storage, so the queue can show what Claude actually sent back
+          const raw = await getJSON(`meeting:${m.id}`);
+          const rd = raw?.status === "approved" ? raw?.record : raw?.draft;
+          const items = rd?.items;
+          const shape = items === undefined ? "missing" : items === null ? "null" : Array.isArray(items) ? `array of ${items.length}${items.length ? ` (${typeof items[0]})` : ""}` : typeof items;
+          const sample = items === undefined ? "" : JSON.stringify(items).slice(0, 300);
+          broken.push({ meetingId: m.id, body: m.body, date: m.date, problem: m.draftProblem || "The draft has a summary but no items; redraft it.", truncated: !!m.draftMeta?.truncated,
+            diag: { shape, sample, keys: Object.keys(rd || {}).join(", "), draftedAt: m.draftMeta?.at || null, model: m.draftMeta?.model || null, outputTokens: m.draftMeta?.usage?.output_tokens ?? null, hadVideo: !!m.draftMeta?.hadVideo, hadPacket: !!m.draftMeta?.hadPacket, hadMinutes: !!m.draftMeta?.hadMinutes, itemsRaw: (rd?.itemsRaw || "").slice(0, 300), error: m.error || "" } });
+        }
+        broken.sort((a, b) => b.date.localeCompare(a.date));
         const [ids] = await redis(["SMEMBERS", "reports"]);
         const reports = (await getMany(ids.map((id) => `report:${id}`))).filter((r) => r && !r.done).sort((a, b) => b.at.localeCompare(a.at));
         return json({ items: out, reports, broken, bodies: BODIES });
