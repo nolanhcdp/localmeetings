@@ -159,6 +159,13 @@ html { overflow-x: clip; }
 .agenda .t { font-weight: 600; }
 .how { background: var(--council-tint); padding: 10px 14px; margin: 12px 0 0; border-radius: 4px; }
 
+/* pull to refresh (home-screen app only) */
+.ptr { height: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; gap: 10px; background: var(--panel); color: var(--faint); font-size: .9rem; font-weight: 600; transition: height .2s ease; }
+.ptr-ring { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--council); flex: none; transition: transform .2s; }
+.ptr.ready .ptr-ring { transform: rotate(180deg); border-top-color: var(--pass); }
+.ptr.busy .ptr-ring { animation: ptrspin .8s linear infinite; }
+@keyframes ptrspin { to { transform: rotate(360deg); } }
+
 /* alerts */
 .alerts { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; padding: 14px 18px; margin: 18px 0 0; border-left: 6px solid var(--gold); }
 .alerts.on { border-left-color: var(--pass); }

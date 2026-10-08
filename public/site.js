@@ -622,6 +622,32 @@ async function renderLive() {
 }
 renderLive();
 
+// ---- Pull to refresh, for the home-screen version (phones don't give a standalone web app the browser's own one)
+(function pullToRefresh() {
+  if (!standalone() || !("ontouchstart" in window)) return;
+  const bar = document.createElement("div"); bar.className = "ptr"; bar.innerHTML = `<span class="ptr-ring"></span><span class="ptr-text">Pull to refresh</span>`; document.body.prepend(bar);
+  const text = bar.querySelector(".ptr-text");
+  let startY = null, pull = 0, armed = false, busy = false;
+  const LIMIT = 72;
+  addEventListener("touchstart", (e) => { if (busy || window.scrollY > 0 || document.getElementById("report")?.open) { startY = null; return; } startY = e.touches[0].clientY; pull = 0; armed = false; }, { passive: true });
+  addEventListener("touchmove", (e) => {
+    if (startY == null || busy) return;
+    const dy = e.touches[0].clientY - startY;
+    if (dy <= 0 || window.scrollY > 0) { if (pull) { pull = 0; bar.style.height = "0px"; } return; }
+    pull = Math.min(dy * 0.5, LIMIT + 24);
+    bar.style.height = pull + "px"; bar.classList.toggle("ready", pull >= LIMIT);
+    armed = pull >= LIMIT; text.textContent = armed ? "Let go to refresh" : "Pull to refresh";
+  }, { passive: true });
+  addEventListener("touchend", async () => {
+    if (startY == null) return;
+    startY = null;
+    if (!armed) { bar.style.height = "0px"; bar.classList.remove("ready"); return; }
+    busy = true; bar.classList.add("busy"); text.textContent = "Refreshing…"; bar.style.height = LIMIT + "px";
+    try { cache.clear(); await route(); renderLive(); } catch (e) {}
+    setTimeout(() => { bar.style.height = "0px"; bar.classList.remove("ready", "busy"); busy = false; }, 350);
+  }, { passive: true });
+})();
+
 // ---- router
 async function route() {
   const [path] = location.hash.replace(/^#/, "").split("#item-");
