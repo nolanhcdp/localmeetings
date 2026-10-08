@@ -622,6 +622,21 @@ async function renderLive() {
 }
 renderLive();
 
+// ---- Staying current. A home-screen app is frozen in the background and never reloads on its own, so when it
+// comes back to the foreground: if the site has been redeployed since this page loaded, reload; otherwise refresh the data.
+let pageTag = null, lastShown = Date.now();
+async function siteTag() { try { const r = await fetch("/site.js", { method: "HEAD", cache: "no-store" }); return r.headers.get("etag") || r.headers.get("last-modified") || null; } catch (e) { return null; } }
+siteTag().then((t) => { pageTag = t; });
+async function refreshIfStale({ force = false } = {}) {
+  const t = await siteTag();
+  if (t && pageTag && t !== pageTag) { location.reload(); return true; }
+  if (force || Date.now() - lastShown > 2 * 60e3) { cache.clear(); await route(); renderLive(); }
+  lastShown = Date.now();
+  return false;
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refreshIfStale(); else lastShown = Date.now(); });
+addEventListener("pageshow", (e) => { if (e.persisted) refreshIfStale(); });
+
 // ---- Pull to refresh, for the home-screen version (phones don't give a standalone web app the browser's own one)
 (function pullToRefresh() {
   if (!standalone() || !("ontouchstart" in window)) return;
@@ -643,7 +658,7 @@ renderLive();
     startY = null;
     if (!armed) { bar.style.height = "0px"; bar.classList.remove("ready"); return; }
     busy = true; bar.classList.add("busy"); text.textContent = "Refreshing…"; bar.style.height = LIMIT + "px";
-    try { cache.clear(); await route(); renderLive(); } catch (e) {}
+    try { await refreshIfStale({ force: true }); } catch (e) {}
     setTimeout(() => { bar.style.height = "0px"; bar.classList.remove("ready", "busy"); busy = false; }, 350);
   }, { passive: true });
 })();
