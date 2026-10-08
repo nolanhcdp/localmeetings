@@ -483,7 +483,7 @@ async function viewRef(id) {
 
 // ---------- Needs you: held items and error reports
 async function viewQueue() {
-  const { items, reports, bodies } = await api("queue");
+  const { items, reports, broken = [], bodies } = await api("queue");
   setBodies(bodies);
   $("#view").innerHTML = `
     <h1>Needs you</h1>
@@ -492,6 +492,7 @@ async function viewQueue() {
       <div class="head"><h3>${r.meetingId ? `<a href="#/m/${encodeURIComponent(r.meetingId)}">${esc(r.meetingId)}</a>${r.idx != null ? ` · item ${r.idx + 1}` : ""}` : `Page: ${esc(r.page || "")}`}</h3><span class="meta">${new Date(r.at).toLocaleString()}</span></div>
       <p>${esc(r.text)}</p>${r.contact ? `<p class="meta">Reply to: ${esc(r.contact)}</p>` : ""}
       <div class="actions">${r.meetingId ? `<a class="btn" href="#/m/${encodeURIComponent(r.meetingId)}">Open meeting</a>` : ""}<a class="btn" href="/#${esc(r.page || (r.meetingId ? "/m/" + r.meetingId : "/"))}" target="_blank" rel="noopener">See the public page</a><button data-dismiss="${esc(r.id)}">Done</button></div></div>`).join("")}` : ""}
+    ${broken.length ? `<h2>Drafts with no items (${broken.length})</h2><p class="muted">These meetings have a summary on the public site but nothing under it. Usually the draft was cut off; redrafting fixes it (about 25¢ each).</p>${broken.map((b) => `<div class="card item"><div class="head"><h3>${esc(BODY_NAMES[b.body] || b.body)} · ${fmtDate(b.date)}</h3></div><p>${esc(b.problem)}</p><div class="actions"><button data-draft="${esc(b.meetingId)}" class="primary">Redraft</button><a class="btn" href="#/m/${encodeURIComponent(b.meetingId)}">Open</a></div></div>`).join("")}` : ""}
     <h2>Held items (${items.length})</h2>
     ${items.length ? items.map((it) => {
       const v = it.vote || {}, f = it.minutesFix;
@@ -510,7 +511,8 @@ async function viewQueue() {
         </div></div>`;
     }).join("") : `<p class="muted">Nothing held. Everything is live.</p>`}`;
   $("#view").onclick = async (e) => {
-    const q = e.target.closest("[data-q]"), d = e.target.closest("[data-dismiss]");
+    const q = e.target.closest("[data-q]"), d = e.target.closest("[data-dismiss]"), rd = e.target.closest("[data-draft]");
+    if (rd) { rd.disabled = true; rd.textContent = "Redrafting…"; try { await api("", { id: rd.dataset.draft }, "/api/draft"); toast("Redrafted."); } catch (err) { toast(err.message, 5000); } viewQueue(); return; }
     if (q) { const [id, idx, what] = q.dataset.q.split("|"); q.disabled = true; await api("resolve", { id, idx: +idx, do: what }); toast(what === "hide" ? "Kept off." : "Published."); viewQueue(); }
     if (d) { await api("dismissReport", { id: d.dataset.dismiss }); viewQueue(); }
   };

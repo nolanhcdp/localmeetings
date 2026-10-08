@@ -159,7 +159,7 @@ async function pageHome() {
   const lead = up.find((u) => u.special) || up.find((u) => u.state === "previewed") || up[0];
   if (lead) lead.facts = leadFacts(lead);
   const strip = d.upcoming.filter((u) => daysUntil(u.date) <= 14 && u.id !== lead?.id);
-  const recent = d.recent[0];
+  const recent = d.recent.find((m) => m.items.length) || d.recent[0];
   const decided = recent ? recent.items.filter((i) => !["minutes", "claims", "report"].includes(i.category)).sort((a, b) => (b.amount || 0) - (a.amount || 0) || a.idx - b.idx).slice(0, 5) : [];
   view.innerHTML = `
     ${lead ? leadBlock(lead) : `<div class="card muted">Nothing scheduled in the next two weeks.</div>`}
@@ -177,7 +177,7 @@ async function pageHome() {
       </div>
     </div>
     <div class="sechead"><h2>Earlier meetings</h2><a href="#/meetings">All ${d.counts.meetings}</a></div>
-    <div class="grid">${d.recent.slice(1, 4).map(meetingRow).join("") || `<p class="muted">Nothing yet.</p>`}</div>
+    <div class="grid">${d.recent.filter((m) => m !== recent).slice(0, 3).map(meetingRow).join("") || `<p class="muted">Nothing yet.</p>`}</div>
     <div id="alertsSlot" style="margin-top:28px"></div>`;
   mountAlerts(document.getElementById("alertsSlot"));
 }
