@@ -75,7 +75,7 @@ nav a.on { border-bottom-color: var(--ink); }
   nav.open { display: flex; }
   nav a { flex: 1 1 45%; }
 }
-main { padding-top: 24px; padding-bottom: 60px; min-height: 60vh; outline: none; }
+main.wrap { padding-top: 24px; padding-bottom: 60px; min-height: 60vh; outline: none; }
 footer.site { border-top: 1px solid var(--line); color: var(--faint); font-size: .9rem; padding: 18px 0 40px; margin-top: 40px; }
 
 /* panels */
