@@ -5,7 +5,7 @@ import { itemLabel, recordOf } from "../lib/publish.js";
 import { insights } from "../lib/insights.js";
 import { listMembers, createMember, updateMember, askConfig, askLog, spendStatus, ADMIN_MEMBER } from "../lib/ask.js";
 import { BODIES, GLOSSARY } from "../lib/county.js";
-import { subCount, broadcast, pushReady } from "../lib/push.js";
+import { subCount, broadcast, pushReady, prefStats } from "../lib/push.js";
 import { json, fail, isAdmin } from "../lib/http.js";
 export const config = { maxDuration: 60 };
 
@@ -104,7 +104,7 @@ export async function POST(request) {
       }
       case "addMember": return json(await createMember(p));
       case "updateMember": return json({ member: await updateMember(p.id, p.patch || {}) });
-      case "pushStatus": return json({ ready: pushReady(), subscribers: await subCount(), log: (await getJSON("push:log")) || [], since: await getJSON("push:since") });
+      case "pushStatus": return json({ ready: pushReady(), subscribers: await subCount(), stats: await prefStats(), log: (await getJSON("push:log")) || [], since: await getJSON("push:since") });
       case "pushTest": return json(await broadcast({ title: "Test from Second Reading", body: "If you can read this, alerts work.", url: "/", tag: "test" }));
       case "pushSend": {
         const title = String(p.title || "").trim().slice(0, 80), body = String(p.body || "").trim().slice(0, 240);
