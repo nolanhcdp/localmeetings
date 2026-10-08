@@ -105,7 +105,14 @@ export async function POST(request) {
       case "addMember": return json(await createMember(p));
       case "updateMember": return json({ member: await updateMember(p.id, p.patch || {}) });
       case "pushStatus": return json({ ready: pushReady(), subscribers: await subCount(), log: (await getJSON("push:log")) || [], since: await getJSON("push:since") });
-      case "pushTest": return json(await broadcast({ title: String(p.title || "Test from Second Reading"), body: String(p.body || "If you can read this, alerts work."), url: "/", tag: "test" }));
+      case "pushTest": return json(await broadcast({ title: "Test from Second Reading", body: "If you can read this, alerts work.", url: "/", tag: "test" }));
+      case "pushSend": {
+        const title = String(p.title || "").trim().slice(0, 80), body = String(p.body || "").trim().slice(0, 240);
+        let url = String(p.url || "/").trim() || "/";
+        if (!/^(\/|https?:\/\/)/.test(url)) url = "/" + url;
+        if (!title) return fail("Give the alert a title.");
+        return json(await broadcast({ title, body, url, tag: "custom-" + Date.now().toString(36) }));
+      }
       case "askConfig": { const cfg = { monthlyCents: Math.max(0, Math.round(+p.monthlyCents || 0)), dailyCents: Math.max(0, Math.round(+p.dailyCents || 0)) }; await setJSON("config:ask", cfg); return json({ config: cfg }); }
       default: return fail("Unknown action");
     }
