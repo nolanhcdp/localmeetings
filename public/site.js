@@ -163,7 +163,6 @@ async function pageHome() {
   const decided = recent ? recent.items.filter((i) => !["minutes", "claims", "report"].includes(i.category)).sort((a, b) => (b.amount || 0) - (a.amount || 0) || a.idx - b.idx).slice(0, 5) : [];
   view.innerHTML = `
     ${lead ? leadBlock(lead) : `<div class="card muted">Nothing scheduled in the next two weeks.</div>`}
-    <div id="alertsSlot"></div>
     <div class="sechead"><h2>This week and next</h2><a href="#/calendar">Full calendar</a></div>
     ${strip.length ? `<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(210px,1fr))">${strip.map(upcomingCard).join("")}</div>${legend()}` : `<p class="muted">Nothing else scheduled in the next two weeks.</p>`}
     ${d.ahead.length ? `<div class="sechead"><h2>Dates to watch</h2></div><div class="tablewrap"><table><tbody>${d.ahead.map((a) => `<tr><td style="white-space:nowrap"><b>${esc(dt(a.date, { weekday: "short", month: "short", day: "numeric" }))}</b></td><td><a href="#/i/${esc(a.key)}">${esc(a.title)}</a><div class="small muted">${esc(a.text)}</div></td><td>${a.publicCanSpeak ? `<span class="tag hearing">Public can speak</span>` : ""}</td></tr>`).join("")}</tbody></table></div>` : ""}
@@ -178,12 +177,14 @@ async function pageHome() {
       </div>
     </div>
     <div class="sechead"><h2>Earlier meetings</h2><a href="#/meetings">All ${d.counts.meetings}</a></div>
-    <div class="grid">${d.recent.slice(1, 4).map(meetingRow).join("") || `<p class="muted">Nothing yet.</p>`}</div>`;
+    <div class="grid">${d.recent.slice(1, 4).map(meetingRow).join("") || `<p class="muted">Nothing yet.</p>`}</div>
+    <div id="alertsSlot" style="margin-top:28px"></div>`;
   mountAlerts(document.getElementById("alertsSlot"));
 }
 function pageAlerts() {
   setNav(""); title("Alerts");
-  view.innerHTML = `<h1>Alerts</h1><p class="muted">Second Reading can send a notification to your phone: the day before a meeting when the agenda summary is ready, about an hour before it starts, and when the write-up is published. No account, no email. Once alerts are on, pick which ones you want.</p><div id="alertsSlot"></div>`;
+  view.innerHTML = `<h1>Alerts</h1><p class="muted">Second Reading can send a notification to your phone: the day before a meeting when the agenda summary is ready, about an hour before it starts, and when the write-up is published. No account, no email. Once alerts are on, pick which ones you want.</p>
+    <div id="alertsSlot"></div>`;
   mountAlerts(document.getElementById("alertsSlot"), { full: true });
 }
 
@@ -531,10 +532,13 @@ function toast(msg) {
 
 // ---- Notifications (Web Push). Works once the site is on a phone's home screen (or in a desktop browser).
 const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
-const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) && !window.MSStream;
+const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const isMobile = () => /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (matchMedia("(pointer: coarse)").matches && innerWidth < 900);
+const inAppBrowser = () => /FBAN|FBAV|FB_IAB|Instagram|Messenger|Twitter|Line\/|MicroMessenger/i.test(navigator.userAgent);
 const standalone = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 let swReg = null;
 async function pushState() {
+  if (isIOS() && !standalone()) return "install";
   if (!pushSupported()) return "unsupported";
   if (Notification.permission === "denied") return "denied";
   try { swReg = swReg || (await navigator.serviceWorker.register("/sw.js")); const sub = await swReg.pushManager.getSubscription(); return sub ? "on" : "off"; } catch (e) { return "unsupported"; }
@@ -580,9 +584,20 @@ function prefsForm(p) {
     <div><div class="lbl">For these boards</div>${PREF_GROUPS.map(([v, l]) => box("groups", v, l, "", p.groups.includes(v))).join("")}</div>
   </div>`;
 }
+function installSteps() {
+  const inApp = inAppBrowser();
+  return `<ol class="steps-list">
+    ${inApp ? `<li><b>Open this page in Safari.</b> You're inside another app right now. Tap the <b>···</b> menu and choose <b>Open in Safari</b> (or Open in browser).</li>` : `<li><b>Open this page in Safari</b> if you aren't already.</li>`}
+    <li>Tap the <b>Share</b> button (the square with an arrow pointing up).</li>
+    <li>Scroll down and tap <b>Add to Home Screen</b>, then <b>Add</b>.</li>
+    <li>Open <b>Second Reading</b> from your home screen and tap <b>Turn on alerts</b>.</li>
+  </ol>`;
+}
 function alertsPanel(state) {
-  const copy = { on: ["Alerts are on", "You'll get a heads-up the day before a meeting, when one is about to start, and when the write-up is published.", "Turn off"], off: ["Get a heads-up before meetings", "A notification the day before a meeting, when one is about to start, and when the write-up is published. Nothing else.", "Turn on alerts"], denied: ["Alerts are blocked", "Notifications for this site are turned off in your phone or browser settings.", ""], unsupported: [isIOS() && !standalone() ? "Alerts need the home-screen version" : "Alerts aren't available in this browser", isIOS() && !standalone() ? "On iPhone, add Second Reading to your home screen (Share → Add to Home Screen) and turn alerts on from there." : "", ""] }[state];
-  return `<section class="panel alerts ${state}" id="alerts"><div><b>${copy[0]}</b><div class="small muted">${copy[1]}</div></div>${copy[2] ? `<button class="btn ${state === "on" ? "" : "green"}" data-alerts="${state === "on" ? "off" : "on"}">${copy[2]}</button>` : ""}</section>`;
+  if (state === "install") return `<section class="panel alerts install" id="alerts"><div><b>Get a heads-up before meetings</b><div class="small muted">Alerts go to your phone like any app's. On iPhone, add Second Reading to your home screen first; it takes four taps.</div>${installSteps()}</div></section>`;
+  const copy = { on: ["Alerts are on", "You'll get a heads-up the day before a meeting, when one is about to start, and when the write-up is published.", "Turn off"], off: ["Get a heads-up before meetings", "A notification the day before a meeting, when one is about to start, and when the write-up is published. Nothing else.", "Turn on alerts"], denied: ["Alerts are blocked", "Notifications for this site are turned off in your phone or browser settings.", ""], unsupported: ["Alerts aren't available in this browser", inAppBrowser() ? "Open this page in Chrome (tap the ··· menu, then Open in browser) and try again." : "Try opening secondreading.org in Chrome.", ""] }[state];
+  const hint = state === "off" && !standalone() && !isIOS() ? `<div class="small muted" style="margin-top:6px">Tip: in Chrome's ⋮ menu, <b>Add to Home screen</b> puts Second Reading on your phone like an app.</div>` : "";
+  return `<section class="panel alerts ${state}" id="alerts"><div><b>${copy[0]}</b><div class="small muted">${copy[1]}</div>${hint}</div>${copy[2] ? `<button class="btn ${state === "on" ? "" : "green"}" data-alerts="${state === "on" ? "off" : "on"}">${copy[2]}</button>` : ""}</section>`;
 }
 async function mountAlerts(el, { full = false } = {}) {
   if (!el) return;
