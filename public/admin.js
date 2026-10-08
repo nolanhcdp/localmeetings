@@ -624,10 +624,24 @@ async function pushSettings() {
   const box = $("#pushBox");
   box.innerHTML = `
     ${d.ready ? `<p><strong>${d.subscribers}</strong> phone${d.subscribers === 1 ? "" : "s"} subscribed. People turn alerts on from the home page or <a href="/#/alerts" target="_blank" rel="noopener">/#/alerts</a>. Each quick check sends new agenda summaries and new write-ups (7 a.m. to 9 p.m.); the live check sends "starts in an hour."${d.since ? ` Announcing since ${new Date(d.since).toLocaleString()}.` : " Nothing announced yet: the first quick check after deploy marks what already exists as old news."}</p>
-      <div class="row" style="align-items:flex-end"><div class="grow"><label>Send a test to every subscriber</label><input id="pushTitle" placeholder="Title" value="Test from Second Reading"></div><div><button id="pushTest">Send test</button></div></div>`
+      <h3 style="margin-top:1rem">Send an alert to every subscriber</h3>
+      <div class="row" style="align-items:flex-end;flex-wrap:wrap">
+        <div class="grow"><label>Title (what shows in bold)</label><input id="pushTitle" placeholder="e.g. County Council moved to Thursday" maxlength="80"></div>
+        <div class="grow" style="flex-basis:100%"><label>Message (optional)</label><input id="pushBody" placeholder="One or two sentences." maxlength="240"></div>
+        <div class="grow"><label>Opens this page when tapped</label><input id="pushUrl" placeholder="/#/calendar" value="/"></div>
+        <div><button id="pushSend" class="primary">Send alert</button></div>
+        <div><button id="pushTest">Send a test instead</button></div>
+      </div>
+      <p class="muted">Goes to every phone at once and can't be unsent, so read it twice. Tapping the alert opens the page you give (a site path like <code>/#/m/council-2026-10-08</code>, or a full link).</p>`
     : `<p class="err">Not set up: VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY aren't in Vercel yet. Run <code>npx web-push generate-vapid-keys</code> on your Mac, add both keys as environment variables (plus VAPID_SUBJECT = mailto:your address), and redeploy.</p>`}
     ${d.log?.length ? `<details style="margin-top:.8rem"><summary>Sent (${d.log.length})</summary>${d.log.map((e) => `<div class="issue-ev">${new Date(e.at).toLocaleString()} · <strong>${esc(e.title)}</strong> · ${e.sent} sent${e.dropped ? `, ${e.dropped} dropped` : ""}${e.failed ? `, <span class="err">${e.failed} failed</span>` : ""}<div class="muted">${esc(e.body || "")}</div></div>`).join("")}</details>` : ""}`;
-  $("#pushTest")?.addEventListener("click", async () => { const r = await api("pushTest", { title: $("#pushTitle").value }); toast(`Sent to ${r.sent}${r.failed ? `, ${r.failed} failed` : ""}.`); pushSettings(); });
+  $("#pushTest")?.addEventListener("click", async () => { const r = await api("pushTest"); toast(`Test sent to ${r.sent}${r.failed ? `, ${r.failed} failed` : ""}.`); pushSettings(); });
+  $("#pushSend")?.addEventListener("click", async () => {
+    const title = $("#pushTitle").value.trim(), body = $("#pushBody").value.trim(), url = $("#pushUrl").value.trim() || "/";
+    if (!title) return toast("Give the alert a title.");
+    if (!confirm(`Send to ${d.subscribers} phone${d.subscribers === 1 ? "" : "s"}?\n\n${title}\n${body}`)) return;
+    const r = await api("pushSend", { title, body, url }); toast(`Sent to ${r.sent}${r.failed ? `, ${r.failed} failed` : ""}.`); pushSettings();
+  });
 }
 const cents = (c) => (c == null ? "" : c < 100 ? `${Math.round(c * 10) / 10}¢` : `$${(c / 100).toFixed(2)}`);
 async function askSettings(newCode) {
