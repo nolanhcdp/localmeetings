@@ -1,9 +1,41 @@
 {
-  "crons": [{ "path": "/api/cron", "schedule": "15 11 * * *" }],
+  "crons": [
+    {
+      "path": "/api/cron",
+      "schedule": "15 11 * * *"
+    }
+  ],
   "headers": [
-    { "source": "/(.*)", "headers": [
-      { "key": "X-Robots-Tag", "value": "noindex" },
-      { "key": "Referrer-Policy", "value": "no-referrer" }
-    ] }
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "no-referrer"
+        }
+      ]
+    },
+    {
+      "source": "/(index.html|site.js|site.css|sw.js|ask.html|ask.js|ask.css|admin.html|admin.js|admin.css|site.webmanifest)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        }
+      ]
+    }
   ]
 }
