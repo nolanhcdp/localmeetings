@@ -489,9 +489,9 @@ async function viewQueue() {
     <h1>Needs you</h1>
     <p class="muted">Everything else publishes on its own. These items are held off the public site until you decide, and reports come from the "Report an error" link.</p>
     ${reports.length ? `<h2>Error reports (${reports.length})</h2>${reports.map((r) => `<div class="card item">
-      <div class="head"><h3><a href="#/m/${encodeURIComponent(r.meetingId)}">${esc(r.meetingId)}</a>${r.idx != null ? ` · item ${r.idx + 1}` : ""}</h3><span class="meta">${new Date(r.at).toLocaleString()}</span></div>
+      <div class="head"><h3>${r.meetingId ? `<a href="#/m/${encodeURIComponent(r.meetingId)}">${esc(r.meetingId)}</a>${r.idx != null ? ` · item ${r.idx + 1}` : ""}` : `Page: ${esc(r.page || "")}`}</h3><span class="meta">${new Date(r.at).toLocaleString()}</span></div>
       <p>${esc(r.text)}</p>${r.contact ? `<p class="meta">Reply to: ${esc(r.contact)}</p>` : ""}
-      <div class="actions"><a class="btn" href="#/m/${encodeURIComponent(r.meetingId)}">Open meeting</a><button data-dismiss="${esc(r.id)}">Done</button></div></div>`).join("")}` : ""}
+      <div class="actions">${r.meetingId ? `<a class="btn" href="#/m/${encodeURIComponent(r.meetingId)}">Open meeting</a>` : ""}<a class="btn" href="/#${esc(r.page || (r.meetingId ? "/m/" + r.meetingId : "/"))}" target="_blank" rel="noopener">See the public page</a><button data-dismiss="${esc(r.id)}">Done</button></div></div>`).join("")}` : ""}
     <h2>Held items (${items.length})</h2>
     ${items.length ? items.map((it) => {
       const v = it.vote || {}, f = it.minutesFix;

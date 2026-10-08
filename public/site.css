@@ -203,7 +203,8 @@ blockquote footer { color: var(--faint); font-size: .88rem; margin-top: 4px; }
 .next { background: var(--council-tint); padding: 8px 12px; margin-top: 10px; border-radius: 4px; }
 .uncertain { background: var(--warn-tint); color: var(--warn-ink); padding: 8px 12px; margin: 10px 0; font-size: .95rem; border-radius: 4px; }
 .itemfoot { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 12px; font-size: .9rem; }
-.linkbtn { background: none; border: 0; padding: 0; color: var(--faint); font: inherit; text-decoration: underline; cursor: pointer; }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--link); font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.itemfoot .linkbtn { margin-left: auto; }
 .held { color: var(--faint); font-style: italic; }
 dl.gloss dt { font-weight: 700; } dl.gloss dd { margin: 0 0 10px; color: var(--soft); }
 

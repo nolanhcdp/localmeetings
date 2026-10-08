@@ -294,7 +294,7 @@ async function pageMeeting(id) {
             <div class="official">${esc([it.docNumber, it.step].filter(Boolean).join(" · "))}${it.publicHearing ? ` <span class="tag hearing">Public hearing</span>` : ""}</div>
             <p>${esc(it.whatItIs)}</p>${it.whyItMatters ? `<p class="muted">${esc(it.whyItMatters)}</p>` : ""}
             ${it.location || it.recipient ? `<div class="small muted">${[it.location ? `Where: ${esc(it.location)}` : "", it.recipient ? `To: ${esc(it.recipient)}` : ""].filter(Boolean).join(" · ")}</div>` : ""}
-            ${it.issue ? `<div class="itemfoot"><a href="#/i/${esc(it.issue.key)}">Follow: ${esc(it.issue.title || "this issue")}</a></div>` : ""}</article>`).join("")}`
+            <div class="itemfoot">${it.issue ? `<a href="#/i/${esc(it.issue.key)}">Follow: ${esc(it.issue.title || "this issue")}</a>` : ""}<button class="linkbtn" data-report="${k}">Report an error</button></div></article>`).join("")}`
         : `${m.summary ? `<p class="summary panel" style="padding:16px 18px">${esc(m.summary)}</p>` : `<p class="muted">This meeting's record is still being written up.</p>`}
           ${items.map((it) => itemCard(m, it)).join("")}
           ${m.held ? `<p class="held">${m.held} more item${m.held > 1 ? "s are" : " is"} being checked against the record and will appear here soon.</p>` : ""}`}
@@ -302,7 +302,7 @@ async function pageMeeting(id) {
         ${terms.length ? `<div class="sechead"><h2>Words used here</h2></div><dl class="gloss">${terms.map(([t, d]) => `<dt>${esc(t)}</dt><dd>${esc(d)}</dd>`).join("")}</dl>` : ""}
       </div>
     </div>`;
-  view.querySelectorAll("[data-report]").forEach((b) => b.addEventListener("click", () => openReport(m, items.find((i) => i.idx === +b.dataset.report))));
+  view.querySelectorAll("[data-report]").forEach((b) => b.addEventListener("click", () => openReport(m, u ? { idx: +b.dataset.report, title: u.items[+b.dataset.report]?.title } : items.find((i) => i.idx === +b.dataset.report))));
   const hash = location.hash.split("#item-")[1];
   if (hash) document.getElementById("item-" + hash)?.scrollIntoView();
 }
@@ -499,8 +499,9 @@ function pageAbout() {
 const dlg = document.getElementById("report");
 let reporting = null;
 function openReport(m, it) {
-  reporting = { meetingId: m.id, idx: it?.idx ?? null };
-  document.getElementById("reportWhat").textContent = `${m.bodyName}, ${dt(m.date)}${it ? `: ${it.title}` : ""}`;
+  const path = location.hash.replace(/^#/, "") || "/";
+  reporting = m ? { meetingId: m.id, idx: it?.idx ?? null, page: path } : { page: path };
+  document.getElementById("reportWhat").textContent = m ? `${m.bodyName}, ${dt(m.date)}${it ? `: ${it.title}` : ""}` : `This page (${document.title.replace(/ · Second Reading.*$/, "")})`;
   document.getElementById("reportErr").textContent = "";
   dlg.querySelector("form").reset();
   dlg.showModal();
@@ -512,6 +513,7 @@ dlg.addEventListener("close", async () => {
   if (res.ok) toast("Thanks. A person will look at this.");
   else { document.getElementById("reportErr").textContent = (await res.json().catch(() => ({}))).error || "Couldn't send. Try again."; dlg.showModal(); }
 });
+document.getElementById("reportPage")?.addEventListener("click", (e) => { e.preventDefault(); openReport(null); });
 function toast(msg) {
   const t = document.createElement("div");
   t.textContent = msg; t.setAttribute("role", "status");
