@@ -183,8 +183,8 @@ async function pageHome() {
 }
 function pageAlerts() {
   setNav(""); title("Alerts");
-  view.innerHTML = `<h1>Alerts</h1><p class="muted">Second Reading can send a notification to your phone: the day before a meeting when the agenda summary is ready, about an hour before it starts, and when the write-up is published. No account, no email.</p><div id="alertsSlot"></div>`;
-  mountAlerts(document.getElementById("alertsSlot"));
+  view.innerHTML = `<h1>Alerts</h1><p class="muted">Second Reading can send a notification to your phone: the day before a meeting when the agenda summary is ready, about an hour before it starts, and when the write-up is published. No account, no email. Once alerts are on, pick which ones you want.</p><div id="alertsSlot"></div>`;
+  mountAlerts(document.getElementById("alertsSlot"), { full: true });
 }
 
 // Month grid. #/calendar or #/calendar/2026-11
@@ -522,7 +522,8 @@ dlg.addEventListener("close", async () => {
 });
 document.getElementById("reportPage")?.addEventListener("click", (e) => { e.preventDefault(); openReport(null); });
 function toast(msg) {
-  const t = document.createElement("div");
+  document.querySelectorAll("[data-toast]").forEach((x) => x.remove());
+  const t = document.createElement("div"); t.dataset.toast = "1";
   t.textContent = msg; t.setAttribute("role", "status");
   Object.assign(t.style, { position: "fixed", left: "50%", bottom: "24px", transform: "translateX(-50%)", background: "var(--ink)", color: "var(--paper)", padding: "10px 16px", borderRadius: "8px", zIndex: 20 });
   document.body.append(t); setTimeout(() => t.remove(), 3500);
@@ -558,13 +559,46 @@ async function disableAlerts() {
   toast("Alerts are off.");
   return "off";
 }
+const PREF_KINDS = [["agenda", "Agenda summary", "the day before a meeting, when the summary is ready"], ["starting", "Starting soon", "about an hour before a meeting"], ["published", "What happened", "when the write-up is published"]];
+const PREF_GROUPS = [["council", "County Council"], ["commissioners", "County Commissioners"], ["plan", "County Plan Commission"], ["city-council", "Kokomo Common Council"], ["city-boards", "Other Kokomo boards (Plan, Zoning Appeals, Board of Works)"]];
+let prefsCache = null;
+async function loadPrefs() {
+  const sub = await swReg?.pushManager.getSubscription(); if (!sub) return null;
+  const r = await fetch("/api/push", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "getPrefs", endpoint: sub.endpoint }) }).then((x) => x.json()).catch(() => ({}));
+  prefsCache = r.prefs || { kinds: PREF_KINDS.map((k) => k[0]), groups: PREF_GROUPS.map((g) => g[0]) };
+  return prefsCache;
+}
+async function savePrefs(prefs) {
+  const sub = await swReg?.pushManager.getSubscription(); if (!sub) return;
+  const r = await fetch("/api/push", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "prefs", endpoint: sub.endpoint, prefs }) });
+  if (r.ok) { prefsCache = prefs; toast("Saved."); } else toast("Couldn't save. Try again.");
+}
+function prefsForm(p) {
+  const box = (name, val, label, sub, on) => `<label class="pref"><input type="checkbox" data-pref="${name}" value="${val}" ${on ? "checked" : ""}><span><b>${label}</b>${sub ? `<span class="small muted"> · ${sub}</span>` : ""}</span></label>`;
+  return `<div class="prefs">
+    <div><div class="lbl">Tell me about</div>${PREF_KINDS.map(([v, l, sub]) => box("kinds", v, l, sub, p.kinds.includes(v))).join("")}<div class="pref small muted">Announcements from the person who runs the site always come through. They're rare.</div></div>
+    <div><div class="lbl">For these boards</div>${PREF_GROUPS.map(([v, l]) => box("groups", v, l, "", p.groups.includes(v))).join("")}</div>
+  </div>`;
+}
 function alertsPanel(state) {
   const copy = { on: ["Alerts are on", "You'll get a heads-up the day before a meeting, when one is about to start, and when the write-up is published.", "Turn off"], off: ["Get a heads-up before meetings", "A notification the day before a meeting, when one is about to start, and when the write-up is published. Nothing else.", "Turn on alerts"], denied: ["Alerts are blocked", "Notifications for this site are turned off in your phone or browser settings.", ""], unsupported: [isIOS() && !standalone() ? "Alerts need the home-screen version" : "Alerts aren't available in this browser", isIOS() && !standalone() ? "On iPhone, add Second Reading to your home screen (Share → Add to Home Screen) and turn alerts on from there." : "", ""] }[state];
   return `<section class="panel alerts ${state}" id="alerts"><div><b>${copy[0]}</b><div class="small muted">${copy[1]}</div></div>${copy[2] ? `<button class="btn ${state === "on" ? "" : "green"}" data-alerts="${state === "on" ? "off" : "on"}">${copy[2]}</button>` : ""}</section>`;
 }
-async function mountAlerts(el) {
+async function mountAlerts(el, { full = false } = {}) {
   if (!el) return;
-  const render = (state) => { el.innerHTML = alertsPanel(state); el.querySelector("[data-alerts]")?.addEventListener("click", async (e) => { e.target.disabled = true; render(e.target.dataset.alerts === "on" ? await enableAlerts().catch(() => "off") : await disableAlerts().catch(() => "off")); }); };
+  const render = async (state) => {
+    el.innerHTML = alertsPanel(state) + (full && state === "on" ? `<div class="panel" id="prefsBox" style="padding:14px 18px;margin-top:12px"><p class="muted small">Loading your choices…</p></div>` : full && state !== "on" ? "" : state === "on" ? `<p class="small muted" style="margin:8px 0 0"><a href="#/alerts">Choose which alerts you get</a></p>` : "");
+    el.querySelector("[data-alerts]")?.addEventListener("click", async (e) => { e.target.disabled = true; render(e.target.dataset.alerts === "on" ? await enableAlerts().catch(() => "off") : await disableAlerts().catch(() => "off")); });
+    const pb = el.querySelector("#prefsBox");
+    if (pb) {
+      const p = (await loadPrefs()) || prefsCache;
+      pb.innerHTML = prefsForm(p);
+      pb.addEventListener("change", () => {
+        const next = { kinds: [...pb.querySelectorAll("[data-pref=kinds]:checked")].map((i) => i.value), groups: [...pb.querySelectorAll("[data-pref=groups]:checked")].map((i) => i.value) };
+        savePrefs(next);
+      });
+    }
+  };
   render(await pushState());
 }
 document.getElementById("alertsLink")?.addEventListener("click", (e) => { e.preventDefault(); location.hash = "#/alerts"; });

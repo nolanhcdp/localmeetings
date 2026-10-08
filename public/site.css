@@ -163,6 +163,10 @@ html { overflow-x: clip; }
 .alerts { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; padding: 14px 18px; margin: 18px 0 0; border-left: 6px solid var(--gold); }
 .alerts.on { border-left-color: var(--pass); }
 .alerts > div { flex: 1 1 320px; min-width: 0; }
+.prefs { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px 32px; }
+.prefs .lbl { font-weight: 700; margin-bottom: 6px; }
+.pref { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; border-top: 1px solid var(--hair); }
+.pref input { width: 18px; height: 18px; margin: 3px 0 0; flex: none; accent-color: var(--council); }
 
 /* lists with marks */
 .list { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
