@@ -5,6 +5,7 @@ import { itemLabel, recordOf } from "../lib/publish.js";
 import { insights } from "../lib/insights.js";
 import { listMembers, createMember, updateMember, askConfig, askLog, spendStatus, ADMIN_MEMBER } from "../lib/ask.js";
 import { BODIES, GLOSSARY } from "../lib/county.js";
+import { subCount, broadcast, pushReady } from "../lib/push.js";
 import { json, fail, isAdmin } from "../lib/http.js";
 export const config = { maxDuration: 60 };
 
@@ -103,6 +104,8 @@ export async function POST(request) {
       }
       case "addMember": return json(await createMember(p));
       case "updateMember": return json({ member: await updateMember(p.id, p.patch || {}) });
+      case "pushStatus": return json({ ready: pushReady(), subscribers: await subCount(), log: (await getJSON("push:log")) || [], since: await getJSON("push:since") });
+      case "pushTest": return json(await broadcast({ title: String(p.title || "Test from Second Reading"), body: String(p.body || "If you can read this, alerts work."), url: "/", tag: "test" }));
       case "askConfig": { const cfg = { monthlyCents: Math.max(0, Math.round(+p.monthlyCents || 0)), dailyCents: Math.max(0, Math.round(+p.dailyCents || 0)) }; await setJSON("config:ask", cfg); return json({ config: cfg }); }
       default: return fail("Unknown action");
     }

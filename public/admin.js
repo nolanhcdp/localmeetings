@@ -595,6 +595,8 @@ async function viewSettings() {
     </div>
     <h2>Ask page (core group)</h2>
     <div class="card" id="askBox"><p class="muted">Loading…</p></div>
+    <h2>Phone alerts</h2>
+    <div class="card" id="pushBox"><p class="muted">Loading…</p></div>
     <h2>Daily check</h2>
     <div class="card">
       <p>Runs every morning: looks for new agendas and minutes, drafts up to two meetings that have everything they need, checks up to four drafts against minutes that came out since, and writes previews for up to two upcoming agendas. All of these use the Claude API.</p>
@@ -609,7 +611,7 @@ async function viewSettings() {
     });
     await api("roster", { roster: out }); toast("Saved.");
   };
-  askSettings();
+  askSettings(); pushSettings();
   $("#runNow").onclick = async () => {
     $("#runNow").disabled = true; $("#runOut").textContent = "Running… this can take a few minutes if it drafts.";
     try { const r = await fetch("/api/cron", { headers: { "x-admin-code": CODE } }).then((x) => x.json()); $("#runOut").textContent = r.error ? r.error : `Found ${r.scan.packets} documents; drafted ${r.drafted.length}, checked ${r.checked?.length || 0} against minutes, previewed ${r.previewed?.length || 0}.${r.errors?.length ? " Problems: " + r.errors.join("; ") : ""}`; } catch (e) { $("#runOut").textContent = e.message; }
@@ -617,6 +619,16 @@ async function viewSettings() {
   };
 }
 // Ask page: access codes, limits and the question log
+async function pushSettings() {
+  const d = await api("pushStatus");
+  const box = $("#pushBox");
+  box.innerHTML = `
+    ${d.ready ? `<p><strong>${d.subscribers}</strong> phone${d.subscribers === 1 ? "" : "s"} subscribed. People turn alerts on from the home page or <a href="/#/alerts" target="_blank" rel="noopener">/#/alerts</a>. Each quick check sends new agenda summaries and new write-ups (7 a.m. to 9 p.m.); the live check sends "starts in an hour."${d.since ? ` Announcing since ${new Date(d.since).toLocaleString()}.` : " Nothing announced yet: the first quick check after deploy marks what already exists as old news."}</p>
+      <div class="row" style="align-items:flex-end"><div class="grow"><label>Send a test to every subscriber</label><input id="pushTitle" placeholder="Title" value="Test from Second Reading"></div><div><button id="pushTest">Send test</button></div></div>`
+    : `<p class="err">Not set up: VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY aren't in Vercel yet. Run <code>npx web-push generate-vapid-keys</code> on your Mac, add both keys as environment variables (plus VAPID_SUBJECT = mailto:your address), and redeploy.</p>`}
+    ${d.log?.length ? `<details style="margin-top:.8rem"><summary>Sent (${d.log.length})</summary>${d.log.map((e) => `<div class="issue-ev">${new Date(e.at).toLocaleString()} · <strong>${esc(e.title)}</strong> · ${e.sent} sent${e.dropped ? `, ${e.dropped} dropped` : ""}${e.failed ? `, <span class="err">${e.failed} failed</span>` : ""}<div class="muted">${esc(e.body || "")}</div></div>`).join("")}</details>` : ""}`;
+  $("#pushTest")?.addEventListener("click", async () => { const r = await api("pushTest", { title: $("#pushTitle").value }); toast(`Sent to ${r.sent}${r.failed ? `, ${r.failed} failed` : ""}.`); pushSettings(); });
+}
 const cents = (c) => (c == null ? "" : c < 100 ? `${Math.round(c * 10) / 10}¢` : `$${(c / 100).toFixed(2)}`);
 async function askSettings(newCode) {
   const d = await api("members");

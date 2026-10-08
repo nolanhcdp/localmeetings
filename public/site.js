@@ -163,6 +163,7 @@ async function pageHome() {
   const decided = recent ? recent.items.filter((i) => !["minutes", "claims", "report"].includes(i.category)).sort((a, b) => (b.amount || 0) - (a.amount || 0) || a.idx - b.idx).slice(0, 5) : [];
   view.innerHTML = `
     ${lead ? leadBlock(lead) : `<div class="card muted">Nothing scheduled in the next two weeks.</div>`}
+    <div id="alertsSlot"></div>
     <div class="sechead"><h2>This week and next</h2><a href="#/calendar">Full calendar</a></div>
     ${strip.length ? `<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(210px,1fr))">${strip.map(upcomingCard).join("")}</div>${legend()}` : `<p class="muted">Nothing else scheduled in the next two weeks.</p>`}
     ${d.ahead.length ? `<div class="sechead"><h2>Dates to watch</h2></div><div class="tablewrap"><table><tbody>${d.ahead.map((a) => `<tr><td style="white-space:nowrap"><b>${esc(dt(a.date, { weekday: "short", month: "short", day: "numeric" }))}</b></td><td><a href="#/i/${esc(a.key)}">${esc(a.title)}</a><div class="small muted">${esc(a.text)}</div></td><td>${a.publicCanSpeak ? `<span class="tag hearing">Public can speak</span>` : ""}</td></tr>`).join("")}</tbody></table></div>` : ""}
@@ -178,6 +179,12 @@ async function pageHome() {
     </div>
     <div class="sechead"><h2>Earlier meetings</h2><a href="#/meetings">All ${d.counts.meetings}</a></div>
     <div class="grid">${d.recent.slice(1, 4).map(meetingRow).join("") || `<p class="muted">Nothing yet.</p>`}</div>`;
+  mountAlerts(document.getElementById("alertsSlot"));
+}
+function pageAlerts() {
+  setNav(""); title("Alerts");
+  view.innerHTML = `<h1>Alerts</h1><p class="muted">Second Reading can send a notification to your phone: the day before a meeting when the agenda summary is ready, about an hour before it starts, and when the write-up is published. No account, no email.</p><div id="alertsSlot"></div>`;
+  mountAlerts(document.getElementById("alertsSlot"));
 }
 
 // Month grid. #/calendar or #/calendar/2026-11
@@ -521,6 +528,47 @@ function toast(msg) {
   document.body.append(t); setTimeout(() => t.remove(), 3500);
 }
 
+// ---- Notifications (Web Push). Works once the site is on a phone's home screen (or in a desktop browser).
+const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) && !window.MSStream;
+const standalone = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+let swReg = null;
+async function pushState() {
+  if (!pushSupported()) return "unsupported";
+  if (Notification.permission === "denied") return "denied";
+  try { swReg = swReg || (await navigator.serviceWorker.register("/sw.js")); const sub = await swReg.pushManager.getSubscription(); return sub ? "on" : "off"; } catch (e) { return "unsupported"; }
+}
+const b64ToU8 = (b) => { const p = "=".repeat((4 - (b.length % 4)) % 4); const r = atob((b + p).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from(r, (c) => c.charCodeAt(0)); };
+async function enableAlerts() {
+  const cfg = await fetch("/api/push").then((r) => r.json()).catch(() => ({}));
+  if (!cfg.ready || !cfg.key) { toast("Notifications aren't switched on yet."); return "off"; }
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") return perm === "denied" ? "denied" : "off";
+  swReg = swReg || (await navigator.serviceWorker.register("/sw.js"));
+  await navigator.serviceWorker.ready;
+  const sub = await swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(cfg.key) });
+  const res = await fetch("/api/push", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON() }) });
+  if (!res.ok) { await sub.unsubscribe(); toast("Couldn't turn alerts on. Try again."); return "off"; }
+  toast("Alerts are on. You'll hear before meetings and when write-ups land.");
+  return "on";
+}
+async function disableAlerts() {
+  const sub = await swReg?.pushManager.getSubscription();
+  if (sub) { await fetch("/api/push", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "unsubscribe", endpoint: sub.endpoint }) }).catch(() => null); await sub.unsubscribe(); }
+  toast("Alerts are off.");
+  return "off";
+}
+function alertsPanel(state) {
+  const copy = { on: ["Alerts are on", "You'll get a heads-up the day before a meeting, when one is about to start, and when the write-up is published.", "Turn off"], off: ["Get a heads-up before meetings", "A notification the day before a meeting, when one is about to start, and when the write-up is published. Nothing else.", "Turn on alerts"], denied: ["Alerts are blocked", "Notifications for this site are turned off in your phone or browser settings.", ""], unsupported: [isIOS() && !standalone() ? "Alerts need the home-screen version" : "Alerts aren't available in this browser", isIOS() && !standalone() ? "On iPhone, add Second Reading to your home screen (Share → Add to Home Screen) and turn alerts on from there." : "", ""] }[state];
+  return `<section class="panel alerts ${state}" id="alerts"><div><b>${copy[0]}</b><div class="small muted">${copy[1]}</div></div>${copy[2] ? `<button class="btn ${state === "on" ? "" : "green"}" data-alerts="${state === "on" ? "off" : "on"}">${copy[2]}</button>` : ""}</section>`;
+}
+async function mountAlerts(el) {
+  if (!el) return;
+  const render = (state) => { el.innerHTML = alertsPanel(state); el.querySelector("[data-alerts]")?.addEventListener("click", async (e) => { e.target.disabled = true; render(e.target.dataset.alerts === "on" ? await enableAlerts().catch(() => "off") : await disableAlerts().catch(() => "off")); }); };
+  render(await pushState());
+}
+document.getElementById("alertsLink")?.addEventListener("click", (e) => { e.preventDefault(); location.hash = "#/alerts"; });
+
 // ---- Happening now / Starting soon
 const liveBox = document.getElementById("live");
 let liveTimer = null;
@@ -560,6 +608,7 @@ async function route() {
     else if (parts[0] === "budget" && parts[1]) await pageBudget(parts[1]);
     else if (parts[0] === "budget") await pageBudgets();
     else if (parts[0] === "about") pageAbout();
+    else if (parts[0] === "alerts") pageAlerts();
     else view.innerHTML = `<h1>Page not found</h1><p><a href="#/">Go to the home page</a></p>`;
   } catch (e) {
     view.innerHTML = e.status === 404 ? `<h1>Not found</h1><p class="muted">That page doesn't exist or isn't published yet.</p><p><a href="#/">Home</a></p>` : `<h1>Something went wrong</h1><p class="muted">${esc(e.message)}</p>`;

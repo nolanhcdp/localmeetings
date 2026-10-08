@@ -159,6 +159,11 @@ html { overflow-x: clip; }
 .agenda .t { font-weight: 600; }
 .how { background: var(--council-tint); padding: 10px 14px; margin: 12px 0 0; border-radius: 4px; }
 
+/* alerts */
+.alerts { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; padding: 14px 18px; margin: 18px 0 0; border-left: 6px solid var(--gold); }
+.alerts.on { border-left-color: var(--pass); }
+.alerts > div { flex: 1 1 320px; min-width: 0; }
+
 /* lists with marks */
 .list { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
 .list .row { display: grid; grid-template-columns: 6px minmax(0, 1fr) auto; gap: 0 14px; align-items: center; padding: 11px 14px 11px 0; border-bottom: 1px solid var(--hair); text-decoration: none; color: inherit; }
