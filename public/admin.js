@@ -434,17 +434,20 @@ async function viewVideos() {
 // ---------- Issues
 async function viewIssues() {
   if (!OV) { OV = await api("overview"); setBodies(OV.bodies); }
-  const { issues } = await api("issues");
+  const { issues, kinds = [] } = await api("issues");
   issues.sort((a, b) => (b.lastDate || "").localeCompare(a.lastDate || ""));
+  const kindSel = (i) => `<select data-kind="${esc(i.key)}" title="Which road this issue is on (sets the public page's roadmap)"><option value="" ${!i.kindOverride ? "selected" : ""}>Auto${i.guessed ? `: ${esc(kinds.find((k) => k.kind === i.guessed)?.label || i.guessed)}` : ": no roadmap"}</option>${kinds.map((k) => `<option value="${k.kind}" ${i.kindOverride === k.kind ? "selected" : ""}>${esc(k.label)}</option>`).join("")}<option value="none" ${i.kindOverride === "none" ? "selected" : ""}>No roadmap</option></select>`;
   $("#view").innerHTML = `
     <h1>Issues</h1>
-    <p class="muted">Every published item with an issue key lands on that issue's timeline; these are the public issue pages. <button id="rebuild">Rebuild all timelines</button></p>
+    <p class="muted">Every published item with an issue key lands on that issue's timeline; these are the public issue pages. Each issue is put on a "road" (rezoning, variance, appropriation…) automatically from its items; fix one with the dropdown. <button id="rebuild">Rebuild all timelines</button></p>
     ${issues.length ? issues.map((i) => `<div class="card item">
       <div class="head"><h3>${esc(i.title)}</h3><span class="meta">${esc(i.key)}</span></div>
+      <div class="row" style="align-items:center;gap:.5rem;margin:.3rem 0 .5rem"><span class="muted">Road:</span>${kindSel(i)}</div>
       ${i.events.map((ev) => `<div class="issue-ev">${fmtDate(ev.date)} · ${BODY_NAMES[ev.body]} · <strong>${esc(ev.stage)}</strong>${ev.result && ev.result !== "no vote" ? ` (${esc(ev.result)})` : ""} · <a href="#/m/${encodeURIComponent(ev.meetingId)}">${esc(ev.title)}</a>${ev.amount != null ? ` · ${money(ev.amount)}` : ""}</div>`).join("")}
       ${i.nextStep?.text ? `<p><strong>Next:</strong> ${esc(i.nextStep.text)}${i.nextStep.date ? ` (${fmtDate(i.nextStep.date)})` : ""}</p>` : ""}
     </div>`).join("") : `<p class="muted">No issues yet. Click Rebuild if you have published meetings.</p>`}`;
   $("#rebuild").onclick = async () => { const r = await api("rebuildIssues"); toast(`Rebuilt ${r.issues} issues.`); viewIssues(); };
+  $("#view").onchange = async (e) => { const t = e.target.closest("[data-kind]"); if (!t) return; await api("issueKind", { key: t.dataset.kind, kind: t.value }); toast("Saved."); };
 }
 
 

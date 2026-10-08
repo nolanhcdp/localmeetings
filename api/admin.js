@@ -1,11 +1,12 @@
 // Everything the review screen needs, behind ADMIN_CODE.
-import { listMeetings, getMeeting, saveMeeting, listVideos, getVideo, listIssues, getJSON, setJSON, listRefs, getRef, redis, getMany } from "../lib/store.js";
+import { listMeetings, getMeeting, saveMeeting, listVideos, getVideo, listIssues, saveIssue, getJSON, setJSON, listRefs, getRef, redis, getMany } from "../lib/store.js";
 import { approve, unapprove, assignVideo, scanPackets, getRoster, readyToDraft, normalizeRecord, importFiles, rebuildAllIssues, rebuildIssuesFor, resolveItem, exportForChat, needsCheck, needsPreview, needsEnrich } from "../lib/pipeline.js";
 import { itemLabel, recordOf } from "../lib/publish.js";
 import { insights } from "../lib/insights.js";
 import { listMembers, createMember, updateMember, askConfig, askLog, spendStatus, ADMIN_MEMBER } from "../lib/ask.js";
 import { BODIES, GLOSSARY } from "../lib/county.js";
 import { subCount, broadcast, pushReady, prefStats } from "../lib/push.js";
+import { classifyIssue, KINDS } from "../lib/roadmaps.js";
 import { json, fail, isAdmin } from "../lib/http.js";
 export const config = { maxDuration: 60 };
 
@@ -62,7 +63,13 @@ export async function POST(request) {
       case "assign": return json({ ok: true, video: await assignVideo(p.videoId, p.body, p.date) });
       case "scan": return json(await scanPackets());
       case "roster": await setJSON("config:roster", p.roster); return json({ ok: true });
-      case "issues": return json({ issues: await listIssues() });
+      case "issues": return json({ issues: (await listIssues()).map((i) => ({ ...i, kind: classifyIssue(i), guessed: classifyIssue({ ...i, kindOverride: null }) })), kinds: KINDS });
+      case "issueKind": { // admin override of the roadmap kind; "" clears the override, "none" means no roadmap
+        const issues = await listIssues(); const i = issues.find((x) => x.key === p.key); if (!i) return fail("No such issue");
+        if (p.kind && p.kind !== "none" && !KINDS.some((k) => k.kind === p.kind)) return fail("Unknown kind");
+        if (p.kind) i.kindOverride = p.kind; else delete i.kindOverride;
+        await saveIssue(i); return json({ kind: classifyIssue(i) });
+      }
       case "import": return json({ ok: true, done: await importFiles(p.files || []) });
       case "refs": return json({ refs: (await listRefs()).map(({ funds, generalFundDepartments, otherPropertyTaxDepartments, ...r }) => r) });
       case "ref": return json({ ref: await getRef(p.id) });

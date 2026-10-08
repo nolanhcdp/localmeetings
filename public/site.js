@@ -59,6 +59,7 @@ function voteLine(v, it, m, label) {
 }
 
 const bcls = (body) => `b-${body}`;
+const speakTag = (it) => it.publicHearing || it.speak === "right" ? ` <span class="tag hearing" title="The law requires a public hearing on this item: anyone can speak before the vote.">Public hearing · you can speak</span>` : it.speak === "custom" ? ` <span class="tag" title="The board usually takes comment on items like this, though the law doesn't require it.">Comment usually allowed</span>` : "";
 const BOARD_SHORT = { council: "County Council", commissioners: "Commissioners", plan: "County Plan Commission", "city-council": "Kokomo Council", "city-plan": "Kokomo Plan Commission", "city-bza": "Kokomo Zoning Appeals", "city-works": "Kokomo Board of Works" };
 const legend = () => `<div class="legend"><span class="b-council"><i class="swatch"></i>County Council</span><span class="b-commissioners"><i class="swatch"></i>Commissioners</span><span class="b-plan"><i class="swatch"></i>County Plan Commission</span><span class="b-city-council"><i class="swatch"></i>Kokomo Council</span><span class="b-city-works"><i class="swatch"></i>Other Kokomo boards</span></div>`;
 const resultOf = (it) => (it.result === "passed" || ["adopted", "approved"].includes(it.stage)) && it.result !== "failed" ? "passed" : it.result === "failed" || it.stage === "denied" ? "failed" : it.result === "tabled" || it.stage === "continued" ? "tabled" : "none";
@@ -112,7 +113,7 @@ function leadBlock(u) {
       <div class="meta" style="align-items:center;margin-bottom:8px"><span class="tag board">${esc(u.bodyName)}</span><span class="when" style="color:var(--ink)">${esc(dt(u.date, { weekday: "long", month: "short", day: "numeric" }))}${u.time ? ` · ${esc(u.time)}` : ""}</span>${u.location ? `<span>${esc(u.location)}</span>` : ""}</div>
       <h1>${title}</h1>
       ${u.summary ? `<p>${esc(u.summary)}</p>` : `<p class="muted">${STATE_NOTE[u.state] || ""}</p>`}
-      ${items.length ? `<ul class="agenda">${items.map((i) => `<li><span class="t">${esc(i.title)}</span>${i.publicHearing ? ` <span class="tag hearing">Public hearing</span>` : ""}${i.amount ? ` <span class="muted">· ${money(i.amount)}</span>` : ""}</li>`).join("")}</ul>` : ""}
+      ${items.length ? `<ul class="agenda">${items.map((i) => `<li><span class="t">${esc(i.title)}</span>${speakTag(i)}${i.amount ? ` <span class="muted">· ${money(i.amount)}</span>` : ""}</li>`).join("")}</ul>` : ""}
       ${hearings && u.howToComment ? `<div class="how"><b>How to weigh in:</b> ${esc(u.howToComment)}</div>` : ""}
       <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:14px"><a class="btn solid" href="#/m/${esc(u.id)}">${u.items?.length ? "What's on the agenda" : "Meeting details"}</a>${u.packetUrl ? `<a class="btn" href="${esc(u.packetUrl)}" target="_blank" rel="noopener">Agenda packet (PDF)</a>` : ""}</div>
     </div>
@@ -133,8 +134,20 @@ function decidedList(m, items) {
 }
 
 const issueCard = (i, bodies) => {
-  const steps = (i.bodies || []).length ? Math.min(i.count, 8) : 0;
   const lastBody = i.bodies?.[i.bodies.length - 1] || "";
+  const p = i.progress;
+  if (p && p.total) {
+    const states = p.states || [];
+    const dots = states.map((st, k) => `<span class="s ${st}"></span>${k < states.length - 1 ? `<span class="l ${st === "done" && states[k + 1] === "done" ? "" : "next"}"></span>` : ""}`).join("");
+    const line = p.status === "done" ? `Done${i.lastDate ? ` · ${esc(stageText(i.latestStage) || "finished")} ${esc(dt(i.lastDate, { month: "short", day: "numeric" }))}` : ""}` : p.status === "failed" ? "Voted down" : p.status === "stalled" ? `Step ${Math.min(p.done + 1, p.total)} of ${p.total} · nothing since ${esc(dt(i.lastDate, { month: "short", day: "numeric" }))}` : `Step ${Math.min(p.done + 1, p.total)} of ${p.total}${p.next ? ` · Next: ${esc(p.next.title.toLowerCase())}${p.next.scheduled ? `, ${esc(dt(p.next.scheduled.date, { month: "short", day: "numeric" }))}` : ""}` : ""}`;
+    return `<a class="card ${bcls(lastBody)} ${p.status}" href="#/i/${esc(i.key)}">
+  <b style="font-size:1.05rem">${esc(i.title)}</b>
+  <div class="small muted">${esc(i.kindLabel)}</div>
+  <div class="steps">${dots}</div>
+  <div class="small muted" style="margin-top:6px">${line}</div>
+</a>`;
+  }
+  const steps = (i.bodies || []).length ? Math.min(i.count, 8) : 0;
   return `<a class="card ${bcls(lastBody)}" href="#/i/${esc(i.key)}">
   <b style="font-size:1.05rem">${esc(i.title)}</b>
   <div class="steps">${Array.from({ length: steps }, (_, k) => `<span class="s"></span>${k < steps - 1 ? `<span class="l"></span>` : ""}`).join("")}${i.nextStep?.text ? `<span class="l next"></span><span class="s next"></span>` : ""}</div>
@@ -299,7 +312,7 @@ async function pageMeeting(id) {
       <div class="content">
         ${u ? `${u.summary ? `<p class="summary panel" style="padding:16px 18px">${esc(u.summary)}</p>` : `<p class="muted panel" style="padding:16px 18px">${STATE_NOTE[u.state] || ""}</p>`}
           ${u.items.map((it, k) => `<article class="card item" id="item-${k}"><div class="head"><h3>${esc(it.title)}</h3>${it.amount ? `<div class="amount">${exact(it.amount)}</div>` : ""}</div>
-            <div class="official">${esc([it.docNumber, it.step].filter(Boolean).join(" · "))}${it.publicHearing ? ` <span class="tag hearing">Public hearing</span>` : ""}</div>
+            <div class="official">${esc([it.docNumber, it.step].filter(Boolean).join(" · "))}${speakTag(it)}</div>
             <p>${esc(it.whatItIs)}</p>${it.whyItMatters ? `<p class="muted">${esc(it.whyItMatters)}</p>` : ""}
             ${it.location || it.recipient ? `<div class="small muted">${[it.location ? `Where: ${esc(it.location)}` : "", it.recipient ? `To: ${esc(it.recipient)}` : ""].filter(Boolean).join(" · ")}</div>` : ""}
             <div class="itemfoot">${it.issue ? `<a href="#/i/${esc(it.issue.key)}">Follow: ${esc(it.issue.title || "this issue")}</a>` : ""}<button class="linkbtn" data-report="${k}">Report an error</button></div></article>`).join("")}`
@@ -318,8 +331,37 @@ async function pageMeeting(id) {
 async function pageIssues() {
   setNav("issues"); title("Issues");
   const d = await api({ view: "issues" });
-  view.innerHTML = `<h1>Issues</h1><p class="muted">One matter, every board it passes through, in order. Each dot is a meeting where it came up; a dashed dot is a step still to come.</p>
+  view.innerHTML = `<h1>Issues</h1><p class="muted">One matter, every board it passes through, in order. Each issue sits on a road: green dots are steps that happened, the gold one is up next, dashed ones are still to come, and a hollow one happened before we started following the board.</p>
     <div class="grid">${d.issues.map((i) => issueCard(i, d.bodies)).join("") || `<p class="muted">No issues yet.</p>`}</div>`;
+}
+
+const SPEAK = { right: ["speak", "Public can speak"], custom: ["speak soft", "Comment usually allowed"], none: ["quiet", "Public meeting, no comment"], staff: ["quiet", "No meeting"] };
+function roadmapBlock(i, r) {
+  const stepHtml = (st, n) => {
+    const [cls, text] = SPEAK[st.speak] || SPEAK.none;
+    const ev = st.event;
+    const when = ev ? `<div class="when"><a href="#/m/${esc(ev.meetingId)}#item-${ev.idx}">${esc(ev.sameNight ? "Same night as the final vote" : `${stageText(ev.stage) || "Happened"} ${dt(ev.date, { month: "short", day: "numeric", year: "numeric" })}`)}${ev.result && ev.result !== "no vote" && !ev.sameNight ? ` · ${esc(ev.result)}` : ""}</a></div>` : "";
+    const missed = st.state === "missed" ? `<div class="when muted">Not in our record. It most likely happened before Second Reading started following this board.</div>` : "";
+    const nextBox = st.state === "next" ? `<div class="box"><b>Up next.</b> ${st.scheduled ? `On the ${esc(st.scheduled.bodyName)} agenda for <a href="#/m/${esc(st.scheduled.meetingId)}">${esc(dt(st.scheduled.date, { weekday: "long", month: "short", day: "numeric" }))}</a>.` : st.body ? "Not on an agenda yet. These usually come back within a few months; some never do." : "Handled by staff; it won't show up at a meeting."}${st.body && !st.scheduled ? ` <a href="#/alerts">Get an alert when it's scheduled</a>` : ""}</div>` : "";
+    return `<div class="rstep ${st.state}"><div class="n">${st.state === "done" ? "✓" : n}</div><div>
+      <div class="t">${esc(st.title)}${st.optional && st.state !== "done" ? ` <span class="small muted">(if needed)</span>` : ""} <span class="${cls}">${text}</span></div>
+      <div class="who">${esc(st.bodyName)}</div>
+      <p>${esc(st.what)}</p>${when}${missed}${nextBox}</div></div>`;
+  };
+  const stand = r.next?.key === "again" ? `It looked finished, but it's back on the ${esc(r.next.bodyName)} agenda for ${esc(dt(r.next.scheduled.date, { month: "long", day: "numeric" }))}.` : r.status === "done" ? `This has run its course: the last step on the road happened${r.after ? ". " + esc(r.after) : "."}` : r.status === "failed" ? "It was voted down at the deciding step, so the road ends here unless it's brought back." : r.status === "stalled" ? `Nothing has happened in ${Math.round(r.daysSince / 30)} months. Projects sometimes stop here for good.` : r.next ? `${r.done ? `${r.done} of ${r.total} steps done. ` : ""}Up next is ${r.next.title.toLowerCase()} at the ${esc(r.next.bodyName)}${r.next.scheduled ? ` on ${esc(dt(r.next.scheduled.date, { month: "long", day: "numeric" }))}` : ", with no date yet"}.` : "";
+  const canDo = r.status === "done" ? "This one is decided; the road has run its course. Anything that comes next (a site plan, permits, a contract) would be a new matter and would show up here when it reaches a board." : r.status === "failed" ? "It was voted down. The applicant can usually bring a changed version back, which would start the road over." : r.next?.key === "again" ? `It's back on the ${esc(r.next.bodyName)} agenda for ${esc(dt(r.next.scheduled.date, { weekday: "long", month: "long", day: "numeric" }))}. The board usually takes comment.` : r.next && r.next.speak === "right" ? `The next chance to be heard is ${r.next.title.toLowerCase()} at the ${esc(r.next.bodyName)}${r.next.scheduled ? `, ${esc(dt(r.next.scheduled.date, { weekday: "long", month: "long", day: "numeric" }))}` : ", when it's scheduled"}. That's a public hearing: anyone can speak.` : r.next && r.next.speak === "custom" ? `The next step is at the ${esc(r.next.bodyName)}${r.next.scheduled ? ` on ${esc(dt(r.next.scheduled.date, { month: "long", day: "numeric" }))}` : ""}. The board usually takes comment there, though the law doesn't require it.` : r.status === "active" ? "The remaining steps don't take public comment." : "";
+  const vari = r.steps.find((s) => s.state === "done" && s.bodies.some((b) => /bza/.test(b)));
+  const appeal = vari?.event ? ` The ${esc(vari.bodyName)} decision is final unless someone who spoke at the ${esc(dt(vari.event.date, { month: "short", day: "numeric" }))} hearing files in court within 30 days.` : "";
+  return `
+    <div class="panel status ${r.status}"><div><b>Where this stands</b><div>${stand}</div></div></div>
+    <div class="sechead"><h2>The road this takes</h2><span class="sub">${esc(r.intro)} Filled dots happened; the dashed ones are what usually comes next.</span></div>
+    <div class="panel road">${r.steps.filter((s) => s.state !== "skipped").map((s, k) => stepHtml(s, k + 1)).join("")}</div>
+    ${r.after && r.status !== "done" ? `<p class="small muted" style="margin-top:8px">After that: ${esc(r.after)}</p>` : ""}
+    <template id="asideTpl">
+      <div class="panel asidebox"><b>Can I still do anything?</b><div class="muted">${canDo}${appeal}</div></div>
+      <div class="panel asidebox"><b>Who decides what</b><div>${r.steps.filter((s) => s.state !== "skipped").map((s) => `<div><span class="${s.body ? bcls(s.body) : ""}" style="font-weight:700;color:${s.body ? "var(--board)" : "var(--faint)"}">■</span> ${esc(s.bodyName)}: ${esc(s.title.toLowerCase())}</div>`).join("")}</div></div>
+      ${r.law ? `<div class="panel asidebox"><b>The rules behind this</b><div class="muted">${esc(r.law)}. <a href="#/about">How this works</a></div></div>` : ""}
+    </template>`;
 }
 
 async function pageIssue(key) {
@@ -328,28 +370,37 @@ async function pageIssue(key) {
   title(i.title);
   const lastBody = i.bodies?.[i.bodies.length - 1] || "";
   const events = i.events.slice().reverse();
+  const r = i.roadmap;
+  const kicker = r ? esc(r.label) : esc(list((i.bodies || []).map((b) => BOARD_SHORT[b] || b)));
+  const facts = r
+    ? [`<span><b>${r.next?.key === "again" ? "Back on the agenda" : r.status === "done" ? "Done" : r.status === "failed" ? "Voted down" : r.status === "stalled" ? "Stalled" : `Step ${Math.min(r.done + 1, r.total)} of ${r.total}`}</b>${r.status === "active" && r.done && r.next?.key !== "again" ? ` · ${r.done} done` : ""}</span>`, i.latestStage ? `<span class="pill">${esc(stageText(i.latestStage))} ${esc(dt(i.lastDate, { month: "short", day: "numeric" }))}</span>` : "", r.next ? `<span>Up next: ${r.next.speak === "staff" ? `${esc(r.next.title.toLowerCase())}, no meeting` : `${esc(r.next.bodyName)}${r.next.scheduled ? `, ${esc(dt(r.next.scheduled.date, { month: "short", day: "numeric" }))}` : ", no date yet"}`}</span>` : ""]
+    : [`<span><b>${i.count} step${i.count === 1 ? "" : "s"}</b> since ${esc(dt(i.firstDate, { month: "long", day: "numeric", year: "numeric" }))}</span>`, i.latestStage ? `<span class="pill">${esc(stageText(i.latestStage))}</span>` : ""];
   view.innerHTML = `
     <div class="band ${bcls(lastBody)}"><div class="in">
-      <div class="kicker"><a href="#/issues" style="color:#fff;text-decoration:none">Issues</a> · ${esc(list((i.bodies || []).map((b) => BOARD_SHORT[b] || b)))}</div>
+      <div class="kicker"><a href="#/issues" style="color:#fff;text-decoration:none">Issues</a> · ${kicker}</div>
       <h1>${esc(i.title)}</h1>
-      <div class="facts"><span><b>${i.count} step${i.count === 1 ? "" : "s"}</b> since ${esc(dt(i.firstDate, { month: "long", day: "numeric", year: "numeric" }))}</span>${i.latestStage ? `<span class="pill">${esc(stageText(i.latestStage))}</span>` : ""}</div>
+      <div class="facts">${facts.filter(Boolean).join("")}</div>
     </div></div>
     <div class="two-col ${bcls(lastBody)}">
       <div class="content">
-        ${i.coming.length ? `<div class="sechead" style="margin-top:0"><h2>Coming up</h2></div>${i.coming.map((c) => `<a class="card board" href="#/m/${esc(c.id)}"><div class="when">${esc(dt(c.date, { weekday: "short", month: "short", day: "numeric" }))}</div><div class="who">${esc(c.bodyName)}</div><ul class="agenda">${c.items.map((x) => `<li><span class="t">${esc(x.title)}</span>${x.publicHearing ? ` <span class="tag hearing">Public hearing</span>` : ""}<div class="small muted">${esc(x.step)}</div></li>`).join("")}</ul></a>`).join("")}` : ""}
-        <div class="sechead" ${i.coming.length ? "" : 'style="margin-top:0"'}><h2>So far</h2><span class="sub">Newest first</span></div>
-        <ol class="timeline" style="margin-top:16px">${events.map((e) => { const r = resultOf({ result: e.vote?.result, stage: e.stage }); return `<li class="${bcls(e.body)}">
+        ${r ? roadmapBlock(i, r) : ""}
+        ${i.coming.length ? `<div class="sechead" ${r ? "" : 'style="margin-top:0"'}><h2>Coming up</h2></div>${i.coming.map((c) => `<a class="card board" href="#/m/${esc(c.id)}"><div class="when">${esc(dt(c.date, { weekday: "short", month: "short", day: "numeric" }))}</div><div class="who">${esc(c.bodyName)}</div><ul class="agenda">${c.items.map((x) => `<li><span class="t">${esc(x.title)}</span>${x.publicHearing ? ` <span class="tag hearing">Public hearing</span>` : ""}<div class="small muted">${esc(x.step)}</div></li>`).join("")}</ul></a>`).join("")}` : ""}
+        <div class="sechead" ${i.coming.length || r ? "" : 'style="margin-top:0"'}><h2>${r ? "What's happened so far" : "So far"}</h2><span class="sub">Newest first</span></div>
+        <ol class="timeline" style="margin-top:16px">${events.map((e) => { const rr = resultOf({ result: e.vote?.result, stage: e.stage }); return `<li class="${bcls(e.body)}">
           <div class="d">${esc(dt(e.date))} · ${esc(e.bodyName)}</div>
           <div><a href="#/m/${esc(e.meetingId)}#item-${e.idx}"><b>${esc(e.title)}</b></a></div>
           ${e.whatItIs ? `<div class="muted">${esc(e.whatItIs)}</div>` : ""}
-          <div class="small" style="margin-top:4px"><span class="outcome ${r}"><span class="dot ${r}"></span>${esc(stageText(e.stage))}</span>${e.vote?.no?.length ? ` · No: ${esc(list(e.vote.no))}` : ""}${e.amount ? ` · ${money(e.amount)}` : ""}${e.videoId && e.videoSeconds != null ? ` · <a href="${yt(e.videoId, e.videoSeconds)}" target="_blank" rel="noopener">watch</a>` : ""} ${labelTag(e.label)}</div>
+          <div class="small" style="margin-top:4px"><span class="outcome ${rr}"><span class="dot ${rr}"></span>${esc(stageText(e.stage))}</span>${e.vote?.no?.length ? ` · No: ${esc(list(e.vote.no))}` : ""}${e.amount ? ` · ${money(e.amount)}` : ""}${e.videoId && e.videoSeconds != null ? ` · <a href="${yt(e.videoId, e.videoSeconds)}" target="_blank" rel="noopener">watch</a>` : ""} ${labelTag(e.label)}</div>
         </li>`; }).join("")}</ol>
       </div>
-      <aside>
-        ${i.nextStep?.text ? `<div class="panel" style="padding:14px 16px;background:var(--gold);border-color:#d9b23a"><b>What's next</b><div>${esc(i.nextStep.text)}${i.nextStep.date ? ` (${esc(dt(i.nextStep.date, { month: "short", day: "numeric" }))})` : ""}</div>${i.nextStep.publicCanSpeak ? `<div style="margin-top:6px"><b>The public can speak.</b></div>` : ""}</div>` : ""}
-        <div class="panel" style="padding:14px 16px;margin-top:12px"><b>Boards involved</b><div class="legend" style="flex-direction:column;gap:6px">${(i.bodies || []).map((b) => `<span class="${bcls(b)}"><i class="swatch"></i>${esc(BOARD_SHORT[b] || b)}</span>`).join("")}</div></div>
+      <aside id="issueAside">
+        ${i.nextStep?.text && !r ? `<div class="panel" style="padding:14px 16px;background:var(--gold);border-color:#d9b23a"><b>What's next</b><div>${esc(i.nextStep.text)}${i.nextStep.date ? ` (${esc(dt(i.nextStep.date, { month: "short", day: "numeric" }))})` : ""}</div>${i.nextStep.publicCanSpeak ? `<div style="margin-top:6px"><b>The public can speak.</b></div>` : ""}</div>` : ""}
+        ${r && i.nextStep?.text ? `<div class="panel asidebox"><b>From the record</b><div class="muted">${esc(i.nextStep.text)}${i.nextStep.date ? ` (${esc(dt(i.nextStep.date, { month: "short", day: "numeric" }))})` : ""}</div></div>` : ""}
+        ${r ? "" : `<div class="panel" style="padding:14px 16px;margin-top:12px"><b>Boards involved</b><div class="legend" style="flex-direction:column;gap:6px">${(i.bodies || []).map((b) => `<span class="${bcls(b)}"><i class="swatch"></i>${esc(BOARD_SHORT[b] || b)}</span>`).join("")}</div></div>`}
       </aside>
     </div>`;
+  const tpl = document.getElementById("asideTpl");
+  if (tpl) document.getElementById("issueAside").append(tpl.content.cloneNode(true));
 }
 
 async function pageOfficials() {
@@ -467,7 +518,7 @@ async function pageBudget(id) {
     <div class="stats">
       <div class="stat"><b>${money(t.allFunds)}</b><span>${esc(t.allFundsLabel || "all funds")}</span></div>
       <div class="stat"><b>${money(t.generalFund)}</b><span>General Fund, day-to-day services</span></div>
-      ${tax.rate ? `<div class="stat"><b>$${esc(tax.rate)}</b><span>tax rate per $100 of assessed value</span></div>` : ""}
+      ${tax.rate ? `<div class="stat"><b>$${esc(tax.rate)}</b><span>${r.history?.some((h) => h.adopted) ? "adopted tax rate per $100 of assessed value (a ceiling; the state sets the final rate)" : "tax rate per $100 of assessed value"}</span></div>` : ""}
       ${tax.levy ? `<div class="stat"><b>${money(tax.levy)}</b><span>property tax levy</span></div>` : tax.estimatedCapLossAllFunds ? `<div class="stat"><b>${money(Math.abs(tax.estimatedCapLossAllFunds))}</b><span>expected loss to state tax caps</span></div>` : ""}
     </div>
     ${depts.length ? `<div class="sechead"><h2>Where the General Fund goes</h2><span class="sub">Each box is sized by its share of the ${money(deptTotal)}.</span></div>${treemap(depts, { total: deptTotal, city: !county })}` : ""}
@@ -490,6 +541,18 @@ function pageAbout() {
   <h2>This is a beta</h2>
   <p>Second Reading is a work in progress. Older meetings are still being filled in, new meetings usually appear a day or two after they happen (the video has to be posted and transcribed first), and the way items are summarized and labeled will keep changing as the site improves. Expect gaps, and expect things to move around. When something is wrong, use “Report an error” on the item and a person will look at it.</p>
   <p>Second Reading follows the boards that make the biggest decisions in Howard County and Kokomo: the County Council and Commissioners, the County Plan Commission, the Kokomo Common Council, Plan Commission, Board of Zoning Appeals and Board of Public Works and Safety.</p>
+  <h2>How decisions actually get made</h2>
+  <p>Most confusion about local government comes from not knowing which board decides what, and when you can speak. The short version:</p>
+  <p><b>Changing what land can be used for (a rezoning).</b> The only hearing the law requires is at the Plan Commission, which sends a favorable, unfavorable or no recommendation to the deciding body: the Common Council inside Kokomo, the Commissioners outside it. That body has 90 days; if it does nothing after a favorable recommendation, the rezoning takes effect anyway. The Council usually lets people speak at the final vote, but it doesn't have to. If you want to be heard on a rezoning, the Plan Commission hearing is the one that counts.</p>
+  <p><b>Exceptions to the zoning rules (variances and special exceptions).</b> The Board of Zoning Appeals hears them and decides. Its decision is final; nothing goes to the Council. The only appeal is to court within 30 days, and only someone who spoke or filed at the hearing can bring it. If you stay home, you lose the right to appeal.</p>
+  <p><b>Building something.</b> After any variances, a commercial project needs a site plan (development plan) approved by the Plan Commission, which is where neighbors have the most practical say on how it's built; then the Board of Works handles driveways, right-of-way and utility connections; then permits come from staff with no meeting at all. Splitting land into lots works the same way: a primary plat hearing, then a secondary plat approved without one.</p>
+  <p><b>Spending beyond the budget.</b> Notice goes up at least 14 days ahead, the fiscal body (County Council or Common Council) holds a public hearing and votes the same night, and for property-tax money the state then has 15 days to confirm the money exists.</p>
+  <p><b>New laws and rules.</b> Kokomo's Council reads every ordinance twice before voting; it can pass one the same night only if every member present agrees. The mayor then has 10 days to sign or veto, and silence counts as a veto; the Council can override with two-thirds. The County Commissioners usually introduce and adopt an ordinance at a single meeting.</p>
+  <p><b>Tax breaks for businesses (abatements).</b> The fiscal body, never the Commissioners, declares the area eligible, gives notice to every taxing unit affected, holds a public hearing, and confirms. The company then reports every May on whether it kept its job and investment promises, and the abatement can be ended if it didn't.</p>
+  <p><b>Hiring contractors.</b> Work over $300,000 goes out for sealed bids, advertised twice and opened aloud at a meeting; $50,000 to $300,000 takes quotes opened at a meeting. Bids are usually "taken under advisement" and awarded at a later meeting, within 60 days, to the lowest bidder the board judges able to do the work.</p>
+  <p><b>The budget.</b> A notice to taxpayers, a public hearing, adoption by November 1, then the state certifies the budget, levy and tax rate by the end of December. The state can lower what was adopted but never raise it, so the tax rate a council adopts is a ceiling, not the final number.</p>
+  <p><b>When can you speak?</b> The Open Door Law gives you the right to attend and record any meeting, not to speak. A legal right to be heard exists only where a public hearing is required: Plan Commission rezoning and plat hearings, Board of Zoning Appeals hearings, extra spending, the budget hearing, and tax-abatement confirmations. Everywhere else, including ordinary ordinances at the Council and anything at the Board of Works, letting the public speak is up to the board. The site marks items with "Public hearing · you can speak" when the right exists and "Comment usually allowed" when it's custom.</p>
+  <p class="muted small">Sources: Indiana Code 36-7-4 (planning and zoning), 6-1.1-18-5 (additional appropriations), 36-4-6 and 36-2-4 (ordinances), 6-1.1-12.1 (abatements), 36-1-12 (public works bidding), 6-1.1-17 (budgets), 5-14-1.5 (Open Door Law); Kokomo Code of Ordinances chapter 30A; Howard County Code chapter 30.</p>
   <h2>Where it comes from</h2>
   <p>Every day it checks the county and city websites for new agendas and minutes and the official YouTube channels for meeting videos. AI reads them and writes a plain-language summary of each item: what it is, why it matters, how the vote went and what happens next. Every item links back to the source document or the moment in the video.</p>
   <h2>What the labels mean</h2>
