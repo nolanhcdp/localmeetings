@@ -76,9 +76,10 @@ export async function POST(request) {
           });
         }
         out.sort((a, b) => b.date.localeCompare(a.date));
+        const broken = (await listMeetings()).filter((m) => { const r = recordOf(m); return r && (m.draftProblem || (r.summary && !(r.items || []).length)); }).map((m) => ({ meetingId: m.id, body: m.body, date: m.date, problem: m.draftProblem || "The draft has a summary but no items; redraft it.", truncated: !!m.draftMeta?.truncated })).sort((a, b) => b.date.localeCompare(a.date));
         const [ids] = await redis(["SMEMBERS", "reports"]);
         const reports = (await getMany(ids.map((id) => `report:${id}`))).filter((r) => r && !r.done).sort((a, b) => b.at.localeCompare(a.at));
-        return json({ items: out, reports, bodies: BODIES });
+        return json({ items: out, reports, broken, bodies: BODIES });
       }
       case "dismissReport": {
         const r = await getJSON(`report:${p.id}`);
