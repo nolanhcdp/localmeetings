@@ -479,6 +479,8 @@ function pageAbout() {
   setNav(""); title("How this works");
   view.innerHTML = `<h1>How this works</h1>
   <p>A second reading is the vote where an ordinance actually passes. This site is a second reading of the public record for people who weren't in the room.</p>
+  <h2>This is a beta</h2>
+  <p>Second Reading is a work in progress. Older meetings are still being filled in, new meetings usually appear a day or two after they happen (the video has to be posted and transcribed first), and the way items are summarized and labeled will keep changing as the site improves. Expect gaps, and expect things to move around. When something is wrong, use “Report an error” on the item and a person will look at it.</p>
   <p>Second Reading follows the boards that make the biggest decisions in Howard County and Kokomo: the County Council and Commissioners, the County Plan Commission, the Kokomo Common Council, Plan Commission, Board of Zoning Appeals and Board of Public Works and Safety.</p>
   <h2>Where it comes from</h2>
   <p>Every day it checks the county and city websites for new agendas and minutes and the official YouTube channels for meeting videos. AI reads them and writes a plain-language summary of each item: what it is, why it matters, how the vote went and what happens next. Every item links back to the source document or the moment in the video.</p>

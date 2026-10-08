@@ -59,6 +59,7 @@ header.site { background: var(--panel); border-bottom: 1px solid var(--line); }
 .brand img { width: 30px; height: 30px; border-radius: 6px; flex: none; align-self: center; }
 .brand b { font-family: var(--display); font-size: 1.7rem; font-weight: 700; }
 .brand span { font-size: .92rem; color: var(--faint); }
+.brand .beta { font-style: normal; font-size: .8rem; font-weight: 700; color: var(--warn-ink); background: var(--gold); padding: 1px 7px; border-radius: 3px; align-self: center; }
 nav { display: flex; gap: 2px 20px; flex-wrap: wrap; }
 nav a { color: var(--ink); text-decoration: none; font-weight: 600; font-size: .95rem; padding: 6px 0 4px; border-bottom: 2px solid transparent; }
 nav a:hover { color: var(--ink); border-bottom-color: var(--line); }
@@ -66,7 +67,9 @@ nav a.on { border-bottom-color: var(--ink); }
 .menu { display: none; }
 @media (max-width: 760px) {
   .brand { flex: 1 1 0; min-width: 0; flex-wrap: wrap; gap: 0 10px; }
-  .brand span { flex-basis: 100%; padding-left: 40px; margin-top: -4px; }
+  .brand span { order: 3; flex-basis: 100%; padding-left: 40px; margin-top: -4px; }
+  .brand b { font-size: 1.45rem; }
+  .brand .beta { font-size: .72rem; padding: 0 6px; }
   .menu { display: block; background: none; border: 1px solid var(--line); color: var(--ink); padding: 6px 12px; font: inherit; font-weight: 600; border-radius: 4px; }
   nav { display: none; width: 100%; padding-bottom: 8px; }
   nav.open { display: flex; }
