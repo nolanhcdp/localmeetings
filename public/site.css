@@ -393,3 +393,4 @@ tr.muted td { color: var(--none); }
 .sechead.dec .sub { font-family: var(--body); font-weight: 400; font-size: .92rem; color: var(--faint); margin-left: 8px; }
 .filters.months { margin-top: -8px; }
 .filters.months .chip { font-weight: 500; }
+.filters.years { margin-top: -8px; }

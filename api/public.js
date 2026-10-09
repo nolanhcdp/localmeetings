@@ -9,14 +9,14 @@ export async function GET(request) {
     let out;
     switch (q("view")) {
       case "home": out = await P.home(); break;
-      case "meetings": out = await P.meetings(q("body")); break;
-      case "decisions": out = await P.decisions(q("body")); break;
+      case "meetings": out = await P.meetings(q("body"), q("year")); break;
+      case "decisions": out = await P.decisions(q("body"), q("year")); break;
       case "calendar": out = await P.calendar(); break;
       case "meeting": out = await P.meeting(q("id")); break;
       case "issues": out = await P.issuesList(); break;
       case "issue": out = await P.issue(q("key")); break;
-      case "officials": out = await P.officials(); break;
-      case "official": out = await P.official(q("body"), q("slug")); break;
+      case "officials": out = await P.officials(q("year")); break;
+      case "official": out = await P.official(q("body"), q("slug"), q("year")); break;
       case "search": out = await P.search(q("q")); break;
       case "refs": out = await P.refs(); break;
       case "ref": out = await P.ref(q("id")); break;

@@ -621,8 +621,14 @@ async function viewSettings() {
     <div class="card" id="pushBox"><p class="muted">Loading…</p></div>
     <h2>Past years</h2>
     <div class="card">
-      <p class="muted">Scoping tool: what the two YouTube channels have for a year, with whether YouTube has captions (the transcript source). Costs a few YouTube quota units, no Claude.</p>
-      <p class="actions"><input id="invYear" type="number" value="${new Date().getFullYear() - 1}" style="width:6em"> <button id="invRun">Video inventory</button></p>
+      <p class="muted">The archive. Past meetings are written up from the official minutes (video where a board has no minutes online), never by the daily run, and stay off the home page and alerts. Each step here is a button; nothing costs money until "Draft".</p>
+      <p class="actions"><input id="arcYear" type="number" value="${new Date().getFullYear() - 1}" style="width:6em">
+        <button id="arcScan" title="Reads both governments' document pages for that year and creates the meeting records (no Claude)">1. Find documents</button>
+        <button id="arcVideos" title="Lists both YouTube channels for that year and links each video to its meeting; ceremonies and promos are skipped (no Claude)">2. Match videos</button>
+        <button id="arcList" title="Show the year's meetings and what each has">Show</button>
+        <button id="invRun" title="Just the YouTube listing, with lengths">Video inventory</button></p>
+      <p class="muted" style="font-size:.9rem">Transcripts for Kokomo Council and Board of Works come from the Mac job: run <code>fetch-transcripts.sh</code> by hand after step 2 (it asks the site which videos are wanted). Then draft.</p>
+      <div id="arcOut"></div>
       <div id="invOut"></div>
     </div>
     <h2>Daily check</h2>
@@ -640,15 +646,62 @@ async function viewSettings() {
     await api("roster", { roster: out }); toast("Saved.");
   };
   askSettings(); pushSettings();
+  const BODY_ORDER = ["city-council", "city-works", "city-plan", "city-bza", "council", "commissioners", "plan"];
+  const COST = { "city-council": 25, "city-works": 20, "city-plan": 10, "city-bza": 10, council: 12, commissioners: 12, plan: 20 };
+  let ARC_STOP = false;
+  const arcShow = async () => {
+    const year = Number($("#arcYear").value);
+    const r = await api("archiveList", { year });
+    const by = {}; for (const m of r.meetings) (by[m.body] ||= []).push(m);
+    const mark = (ok, word) => ok ? `<span style="color:var(--ok,#1a8f4a)">${word}</span>` : `<span class="muted">—</span>`;
+    const draftable = (m) => m.status !== "drafted" && m.status !== "approved" && m.status !== "skipped" && !m.cancelled && (["city-council", "city-works", "plan"].includes(m.body) ? m.transcript : (m.minutes || m.packet));
+    const waitingVideo = (m) => ["city-council", "city-works", "plan"].includes(m.body) && m.video && !m.transcript && m.status !== "drafted";
+    $("#arcOut").innerHTML = `<p class="meta">${r.meetings.length} meetings in ${year} · ${r.meetings.filter((m) => m.status === "drafted" || m.status === "approved").length} written up · spent so far $${(r.meetings.reduce((a, m) => a + (m.cents || 0), 0) / 100).toFixed(2)}</p>
+      ${BODY_ORDER.filter((b) => by[b]).map((b) => { const list = by[b]; const can = list.filter(draftable); const wait = list.filter(waitingVideo); return `
+        <h3 style="margin-bottom:4px">${esc(BODY_NAMES[b] || b)} <span class="meta">· ${list.length} meetings · ${list.filter((m) => m.status === "drafted" || m.status === "approved").length} done${wait.length ? ` · ${wait.length} waiting on transcripts` : ""}</span>
+          ${can.length ? `<button data-arcdraft="${b}" class="primary" style="margin-left:10px" title="Uses the Claude API">Draft ${can.length} (about $${((can.length * COST[b]) / 100).toFixed(2)})</button>` : ""}</h3>
+        <table class="meta"><tbody>${list.map((m) => `<tr><td><a href="#/m/${m.id}">${m.date}</a></td><td>${mark(m.packet, m.agendaOnly ? "agenda" : "packet")}</td><td>${mark(m.minutes, "minutes")}</td><td>${mark(m.video, "video")}</td><td>${mark(m.transcript, "transcript")}</td><td>${m.status === "drafted" || m.status === "approved" ? `<b>${m.items} items</b> · ${m.hadMinutes ? "from minutes" : m.hadVideo ? "from video" : "from packet"}${m.cents != null ? ` · ${m.cents}¢` : ""}` : m.status === "error" ? `<span class="err">${esc(m.error)}</span>` : m.status}</td></tr>`).join("")}</tbody></table>`; }).join("")}
+      <p class="actions"><button id="arcStop" style="display:none">Stop</button> <span id="arcProg" class="meta"></span></p>`;
+    $("#arcStop").onclick = () => { ARC_STOP = true; $("#arcStop").textContent = "Stopping after this one…"; };
+    document.querySelectorAll("[data-arcdraft]").forEach((btn) => btn.onclick = async () => {
+      const b = btn.dataset.arcdraft; const list = (by[b] || []).filter(draftable);
+      if (!confirm(`Draft ${list.length} ${BODY_NAMES[b] || b} meetings from ${year} with the Claude API?\n\nAbout ${COST[b]}¢ each, roughly $${((list.length * COST[b]) / 100).toFixed(2)} total. You can stop part way; finished ones are kept.`)) return;
+      ARC_STOP = false; $("#arcStop").style.display = ""; $("#arcStop").textContent = "Stop";
+      document.querySelectorAll("[data-arcdraft]").forEach((x) => (x.disabled = true));
+      let spent = 0, done = 0, failed = [];
+      for (const m of list) {
+        if (ARC_STOP) break;
+        $("#arcProg").textContent = `Drafting ${m.id} (${done + 1} of ${list.length}) · spent $${(spent / 100).toFixed(2)}`;
+        try { const r = await api("", { id: m.id }, "/api/draft"); spent += r.cents || 0; } catch (e) { failed.push(`${m.id}: ${e.message}`); }
+        done++;
+      }
+      toast(`Done: ${done - failed.length} drafted · spent $${(spent / 100).toFixed(2)}${failed.length ? ` · ${failed.length} failed` : ""}`, 9000);
+      await arcShow();
+      if (failed.length) $("#arcProg").innerHTML = `<span class="err">${failed.map(esc).join("<br>")}</span>`;
+    });
+  };
+  $("#arcScan").onclick = async () => {
+    $("#arcScan").disabled = true; $("#arcOut").innerHTML = `<p class="muted">Reading the document pages…</p>`;
+    try { const r = await api("archiveScan", { year: Number($("#arcYear").value) }); toast(`Kokomo: ${r.city?.created?.length ?? 0} new meetings from ${r.city?.files ?? 0} files. County: ${r.county?.created?.length ?? 0} new from ${r.county?.packets ?? 0} packets.${r.errors?.length ? " " + r.errors.join(" ") : ""}`, 9000); await arcShow(); }
+    catch (e) { $("#arcOut").innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+    $("#arcScan").disabled = false;
+  };
+  $("#arcVideos").onclick = async () => {
+    $("#arcVideos").disabled = true; $("#arcOut").innerHTML = `<p class="muted">Matching videos…</p>`;
+    try { const r = await api("archiveVideos", { year: Number($("#arcYear").value) }); toast(`Linked ${r.attached} videos to meetings, made ${r.created} meetings from video (boards with no minutes online), skipped ${r.skipped} ceremonies/shorts; ${r.unplaced.length} couldn't be placed (see Unsorted videos).`, 10000); await arcShow(); }
+    catch (e) { $("#arcOut").innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+    $("#arcVideos").disabled = false;
+  };
+  $("#arcList").onclick = arcShow;
   $("#invRun").onclick = async () => {
     $("#invRun").disabled = true; $("#invOut").innerHTML = `<p class="muted">Asking YouTube…</p>`;
     try {
-      const r = await api("videoInventory", { year: Number($("#invYear").value) });
+      const r = await api("videoInventory", { year: Number($("#arcYear").value) });
       if (r.error) throw new Error(r.error);
       const guess = (t) => /council/i.test(t) ? "council" : /commission|plan/i.test(t) ? "plan" : /zoning|bza/i.test(t) ? "bza" : /works|bpw/i.test(t) ? "works" : /drainage/i.test(t) ? "drainage" : "other";
-      const table = (gov, list) => { const by = {}; list.forEach((v) => (by[guess(v.title)] ||= []).push(v)); return `<h3>${gov === "city" ? "KGOV2 (city)" : "County channel"} · ${list.length} videos in ${r.year}, ${list.filter((v) => v.captions).length} with captions</h3>
-        <p class="meta">${Object.entries(by).map(([k, v]) => `${k}: ${v.length} (${v.filter((x) => x.captions).length} captioned)`).join(" · ")}</p>
-        <details><summary>All ${list.length}</summary><table class="meta"><tbody>${list.map((v) => `<tr><td>${v.date}</td><td>${v.minutes} min</td><td>${v.captions ? "captions" : "<b>no captions</b>"}</td><td><a href="https://www.youtube.com/watch?v=${v.videoId}" target="_blank" rel="noopener">${esc(v.title)}</a></td></tr>`).join("")}</tbody></table></details>`; };
+      const table = (gov, list) => { const by = {}; list.forEach((v) => (by[guess(v.title)] ||= []).push(v)); return `<h3>${gov === "city" ? "KGOV2 (city)" : "County channel"} · ${list.length} videos in ${r.year}</h3>
+        <p class="meta">${Object.entries(by).map(([k, v]) => `${k}: ${v.length}`).join(" · ")}</p>
+        <details><summary>All ${list.length}</summary><table class="meta"><tbody>${list.map((v) => `<tr><td>${v.date}</td><td>${v.minutes} min</td><td>${v.live ? "stream" : "upload"}</td><td><a href="https://www.youtube.com/watch?v=${v.videoId}" target="_blank" rel="noopener">${esc(v.title)}</a></td></tr>`).join("")}</tbody></table></details>`; };
       $("#invOut").innerHTML = table("city", r.city || []) + table("county", r.county || []);
       window.__inventory = r;
     } catch (e) { $("#invOut").innerHTML = `<p class="err">${esc(e.message)}</p>`; }

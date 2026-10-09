@@ -30,16 +30,23 @@ IDS=$( for src in $SOURCES; do
 done | sort -u)
 
 # Videos the site still has no transcript for (YouTube sometimes refuses with "too many requests"): try them again.
-RETRY=$(curl -fsS --max-time 30 -H "x-admin-code: $ADMIN_CODE" "$SITE/api/transcript?missing=1" 2>/dev/null | grep -oE '"[A-Za-z0-9_-]{11}"' | tr -d '"')
+ASK=$(curl -fsS --max-time 30 -H "x-admin-code: $ADMIN_CODE" "$SITE/api/transcript?missing=1" 2>/dev/null)
+RETRY=$(echo "$ASK" | sed -n 's/.*"missing":\[\([^]]*\)\].*/\1/p' | grep -oE '[A-Za-z0-9_-]{11}')
+# Past-year videos the site has linked to archive meetings and wants transcripts for (set up from Admin → Settings → Past years)
+WANTED=$(echo "$ASK" | sed -n 's/.*"wanted":\[\([^]]*\)\].*/\1/p' | grep -oE '[A-Za-z0-9_-]{11}')
+[ -n "$WANTED" ] && log "archive: $(echo "$WANTED" | wc -l | tr -d ' ') past-year transcripts wanted"
 
 sent=0
-for id in $(printf '%s\n' $RETRY $IDS | awk '!seen[$0]++'); do
-  if ! printf '%s\n' $RETRY | grep -qxF -- "$id"; then grep -qxF -- "$id" "$SEEN" && continue; fi
+for id in $(printf '%s\n' $WANTED $RETRY $IDS | awk 'NF && !seen[$0]++'); do
+  if printf '%s\n' $WANTED | grep -qxF -- "$id"; then :   # wanted: ignore the seen list and the start date
+  elif ! printf '%s\n' $RETRY | grep -qxF -- "$id"; then grep -qxF -- "$id" "$SEEN" && continue; fi
   info=$("$YTDLP" --skip-download --print "%(release_date,upload_date)s|%(duration)s|%(live_status)s|%(channel_id)s|%(title)s" "https://www.youtube.com/watch?v=$id" 2>/dev/null | head -1)
   [ -z "$info" ] && continue
   IFS='|' read -r vdate dur live chan title <<< "$info"
   case "$live" in is_live|is_upcoming|post_live) continue;; esac   # captions come after the stream is processed
-  if [[ "$vdate" < "$START_DATE" ]] || [ "${dur%.*}" -lt 120 ] 2>/dev/null; then echo "$id" >> "$SEEN"; continue; fi
+  if ! printf '%s\n' $WANTED | grep -qxF -- "$id"; then
+    if [[ "$vdate" < "$START_DATE" ]] || [ "${dur%.*}" -lt 120 ] 2>/dev/null; then echo "$id" >> "$SEEN"; continue; fi
+  fi
   # Ceremonies and promo videos on the city channel
   if echo "$title" | grep -qiE "swearing|ceremony|pet of the week|now you know|news brief|spotlight"; then echo "$id" >> "$SEEN"; continue; fi
   # Budget hearings run 8+ hours; too big to send and not part of the tracker yet.

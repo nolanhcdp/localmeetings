@@ -1,6 +1,6 @@
 // Everything the review screen needs, behind ADMIN_CODE.
 import { listMeetings, getMeeting, saveMeeting, listVideos, getVideo, listIssues, saveIssue, getJSON, setJSON, listRefs, getRef, redis, getMany } from "../lib/store.js";
-import { approve, unapprove, assignVideo, scanPackets, getRoster, readyToDraft, normalizeRecord, importFiles, rebuildAllIssues, rebuildIssuesFor, resolveItem, exportForChat, needsCheck, needsPreview, needsEnrich } from "../lib/pipeline.js";
+import { approve, unapprove, assignVideo, scanPackets, getRoster, readyToDraft, normalizeRecord, importFiles, rebuildAllIssues, rebuildIssuesFor, resolveItem, exportForChat, scanArchive, matchArchiveVideos, archiveOverview, needsCheck, needsPreview, needsEnrich } from "../lib/pipeline.js";
 import { itemLabel, recordOf } from "../lib/publish.js";
 import { insights } from "../lib/insights.js";
 import { listMembers, createMember, updateMember, askConfig, askLog, spendStatus, ADMIN_MEMBER } from "../lib/ask.js";
@@ -64,6 +64,14 @@ export async function POST(request) {
       }
       case "assign": return json({ ok: true, video: await assignVideo(p.videoId, p.body, p.date) });
       case "scan": return json(await scanPackets());
+      case "archiveScan": return json(await scanArchive(p.year));
+      case "archiveVideos": { // attach a year's videos to archive meetings as links; boards with no documents get their records from the videos
+        const year = Number(p.year);
+        const inv = {};
+        for (const [id, gov] of Object.entries(CHANNELS)) inv[gov] = await videoInventory(id, year);
+        return json({ year, ...(await matchArchiveVideos(year, inv)) });
+      }
+      case "archiveList": return json({ year: Number(p.year), meetings: await archiveOverview(p.year) });
       case "videoInventory": { // scoping past years: what each channel has for a year, with caption availability
         const year = Number(p.year) || new Date().getFullYear() - 1;
         const out = {};

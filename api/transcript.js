@@ -1,5 +1,5 @@
 // Receives transcripts from the Mac job (multipart: meta + json3 file) and the browser button (JSON).
-import { receiveVideo, missingTranscripts } from "../lib/pipeline.js";
+import { receiveVideo, missingTranscripts, wantedTranscripts } from "../lib/pipeline.js";
 import { linesFromJson3, linesFromSegments } from "../lib/transcript.js";
 import { json, fail, isAdmin } from "../lib/http.js";
 export const config = { maxDuration: 60 };
@@ -38,5 +38,5 @@ export async function POST(request) {
 // The Mac job asks which videos still need a transcript (e.g. ones YouTube refused with "too many requests").
 export async function GET(request) {
   if (!isAdmin(request)) return fail("Wrong admin code", 401);
-  try { return json({ missing: await missingTranscripts() }); } catch (e) { return fail(e, 500); }
+  try { return json({ missing: await missingTranscripts(), wanted: await wantedTranscripts() }); } catch (e) { return fail(e, 500); }
 }

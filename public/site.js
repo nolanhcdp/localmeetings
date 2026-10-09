@@ -267,14 +267,16 @@ async function pageCalendar(ym) {
     <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(210px,1fr))">${coming.map(upcomingCard).join("") || `<p class="muted">Nothing scheduled.</p>`}</div>`;
 }
 
+const yearChips = (years, year, href) => years.length > 1 ? `<div class="filters years"><a class="chip ${year ? "" : "on"}" href="${href("")}">All years</a>${years.map((y) => `<a class="chip ${year === y ? "on" : ""}" href="${href(y)}">${y}</a>`).join("")}</div>` : "";
 // Decisions: the home page's "Latest decisions" list, for every meeting
 async function pageDecisions(body, ym) {
   if (body === "all") body = "";
   setNav("decisions"); title("Decisions");
-  const d = await api(body ? { view: "decisions", body } : { view: "decisions" });
+  const year = /^\d{4}$/.test(ym || "") ? ym : "";
+  const d = await api({ view: "decisions", ...(body ? { body } : {}), ...(year ? { year } : {}) });
   const months = [...new Set(d.meetings.map((m) => m.date.slice(0, 7)))];
-  if (ym && !months.includes(ym)) ym = "";
-  const shown = ym ? d.meetings.filter((m) => m.date.startsWith(ym)) : d.meetings;
+  if (ym && !year && !months.includes(ym)) ym = "";
+  const shown = ym && !year ? d.meetings.filter((m) => m.date.startsWith(ym)) : d.meetings;
   const groups = {};
   for (const m of shown) (groups[m.date.slice(0, 7)] ||= []).push(m);
   const mname = (k) => new Date(k + "-15T12:00").toLocaleDateString("en-US", { month: "long", year: "numeric" });
@@ -284,17 +286,20 @@ async function pageDecisions(body, ym) {
     ${decidedList(m, items)}`; };
   view.innerHTML = `<h1>Decisions</h1><p class="muted">Every item that came before a board, newest first, with how it ended. Green passed, red failed, gold tabled, grey no vote.</p>
     <div class="filters"><a class="chip ${body ? "" : "on"}" href="${href("", ym)}">All boards</a>${Object.entries(d.bodies).map(([k, b]) => `<a class="chip ${body === k ? "on" : ""}" href="${href(k, ym)}">${esc(b.short)}</a>`).join("")}</div>
-    <div class="filters months"><a class="chip ${ym ? "" : "on"}" href="${href(body, "")}">All months</a>${months.map((k) => `<a class="chip ${ym === k ? "on" : ""}" href="${href(body, k)}">${esc(new Date(k + "-15T12:00").toLocaleDateString("en-US", { month: "short", year: "2-digit" }).replace(" ", " ’"))}</a>`).join("")}</div>
+    <div class="filters months">${(d.years || []).length > 1 ? `<a class="chip ${ym ? "" : "on"}" href="${href(body, "")}">All</a>${(d.years || []).map((y) => `<a class="chip ${year === y ? "on" : ""}" href="${href(body, y)}">${y}</a>`).join("")}<span style="width:10px"></span>` : `<a class="chip ${ym ? "" : "on"}" href="${href(body, "")}">All months</a>`}${months.map((k) => `<a class="chip ${ym === k ? "on" : ""}" href="${href(body, k)}">${esc(new Date(k + "-15T12:00").toLocaleDateString("en-US", { month: "short", year: "2-digit" }).replace(" ", " ’"))}</a>`).join("")}</div>
     ${Object.entries(groups).map(([k, ms]) => `<div class="sechead"><h2>${esc(mname(k))}</h2></div>${ms.map(block).join("")}`).join("") || `<p class="muted">Nothing ${ym ? "in " + esc(mname(ym)) : "yet"}.</p>`}`;
 }
 
-async function pageMeetings(body) {
+async function pageMeetings(body, year) {
+  if (body === "all") body = "";
   setNav("meetings"); title("Meetings");
-  const d = await api(body ? { view: "meetings", body } : { view: "meetings" });
+  const d = await api({ view: "meetings", ...(body ? { body } : {}), ...(year ? { year } : {}) });
   const groups = {};
   for (const m of d.meetings) (groups[m.date.slice(0, 7)] ||= []).push(m);
-  view.innerHTML = `<h1>Meetings</h1><p class="muted">Every meeting since January, newest first. Green, red and gold marks are how each item ended.</p>
-    <div class="filters"><a class="chip ${body ? "" : "on"}" href="#/meetings">All boards</a>${Object.entries(d.bodies).map(([k, b]) => `<a class="chip ${body === k ? "on" : ""}" href="#/meetings/${k}">${esc(b.short)}</a>`).join("")}</div>
+  const href = (b, y) => `#/meetings/${b || "all"}${y ? "/" + y : ""}`;
+  view.innerHTML = `<h1>Meetings</h1><p class="muted">Every meeting, newest first. Green, red and gold marks are how each item ended.${(d.years || []).length > 1 ? " Past years are written up from the official minutes." : ""}</p>
+    <div class="filters"><a class="chip ${body ? "" : "on"}" href="${href("", year)}">All boards</a>${Object.entries(d.bodies).map(([k, b]) => `<a class="chip ${body === k ? "on" : ""}" href="${href(k, year)}">${esc(b.short)}</a>`).join("")}</div>
+    ${yearChips(d.years || [], year, (y) => href(body, y))}
     ${body ? `<p class="muted">${esc(d.bodies[body]?.role)}</p>` : ""}
     ${Object.entries(groups).map(([ym, ms]) => `<div class="sechead"><h2>${esc(new Date(ym + "-15T12:00").toLocaleDateString("en-US", { month: "long", year: "numeric" }))}</h2></div><div class="grid" style="margin-top:14px">${ms.map(meetingRow).join("")}</div>`).join("") || `<p class="muted">No meetings yet.</p>`}`;
 }
@@ -348,7 +353,7 @@ async function pageMeeting(id) {
   const agendaItems = u ? u.items : items;
   view.innerHTML = `
     <div class="band ${bcls(m.body)}"><div class="in">
-      <div class="kicker"><a href="#/meetings/${esc(m.body)}" style="color:#fff;text-decoration:none">${esc(m.bodyName)}</a>${u?.special ? ` · ${esc(u.special)}` : ""}</div>
+      <div class="kicker"><a href="#/meetings/${esc(m.body)}" style="color:#fff;text-decoration:none">${esc(m.bodyName)}</a>${u?.special ? ` · ${esc(u.special)}` : ""}${m.archive ? ` · From the archive, written from ${m.sources?.minutes ? "the official minutes" : m.sources?.video ? "the meeting video" : "the agenda packet"}` : ""}</div>
       <h1>${esc(dLong(m.date))}</h1>
       <div class="facts">${[...facts, ...links].filter(Boolean).join("")}</div>
     </div></div>
@@ -454,12 +459,13 @@ async function pageIssue(key) {
   if (tpl) document.getElementById("issueAside").append(tpl.content.cloneNode(true));
 }
 
-async function pageOfficials() {
+async function pageOfficials(year) {
   setNav("officials"); title("Officials");
-  const d = await api({ view: "officials" });
+  const d = await api({ view: "officials", ...(year ? { year } : {}) });
   const by = {};
   for (const o of d.officials) (by[o.body] ||= []).push(o);
   view.innerHTML = `<h1>Officials</h1>
+    ${yearChips(d.years || [], year, (y) => `#/officials${y ? "/" + y : ""}`)}
     <p class="muted">Attendance, motions and every vote where the record names them. Most votes here are voice votes, where the minutes say only that a motion carried, so individual votes show up mainly on roll calls and when someone is heard voting no.</p>
     ${Object.entries(by).map(([b, os]) => `<div class="sechead ${bcls(b)}"><h2><i class="swatch" style="width:14px;height:14px;margin-right:8px"></i>${esc(d.bodies[b].name)}</h2><span class="sub">${esc(d.bodies[b].role || "")}</span></div>
       <div class="grid ${bcls(b)}" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr))">${os.map((o) => { const pct = o.meetings ? Math.round((1 - o.absent / o.meetings) * 100) : 0; return `<a class="card board" href="#/o/${esc(b)}/${esc(o.slug)}">
@@ -469,9 +475,9 @@ async function pageOfficials() {
       </a>`; }).join("")}</div>`).join("")}`;
 }
 
-async function pageOfficial(body, slug) {
+async function pageOfficial(body, slug, year) {
   setNav("officials");
-  const o = await api({ view: "official", body, slug });
+  const o = await api({ view: "official", body, slug, ...(year ? { year } : {}) });
   title(o.name);
   const named = o.votes.filter((v) => v.how);
   const noTopics = {};
@@ -479,7 +485,7 @@ async function pageOfficial(body, slug) {
   const partWord = (v) => v.how === "no" ? `<span class="outcome failed"><span class="dot failed"></span>No</span>` : v.how === "yes" ? `<span class="outcome passed"><span class="dot passed"></span>Yes</span>` : v.how === "abstain" ? `<span class="outcome"><span class="dot"></span>Abstained</span>` : v.moved ? `<span class="outcome" style="color:var(--pass)"><span class="dot passed"></span>Moved</span>` : `<span class="outcome muted"><span class="dot hollow"></span>Seconded</span>`;
   view.innerHTML = `
     <div class="band ${bcls(body)}"><div class="in" style="display:flex;flex-wrap:wrap;gap:16px 40px;align-items:flex-end;justify-content:space-between">
-      <div><div class="kicker"><a href="#/officials" style="color:#fff;text-decoration:none">${esc(o.bodyName)}</a> · ${esc([o.title, o.party].filter(Boolean).join(" · ") || "Member")}</div><h1>${esc(o.name)}</h1></div>
+      <div><div class="kicker"><a href="#/officials" style="color:#fff;text-decoration:none">${esc(o.bodyName)}</a> · ${esc([o.title, o.party].filter(Boolean).join(" · ") || "Member")}</div><h1>${esc(o.name)}</h1>${(o.years || []).length > 1 ? `<div class="kicker" style="margin-top:6px">${[["", "All years"], ...(o.years || []).map((y) => [y, y])].map(([y, t]) => (y === (year || "")) ? `<b>${t}</b>` : `<a href="#/o/${esc(body)}/${esc(slug)}${y ? "/" + y : ""}" style="color:#fff">${t}</a>`).join(" · ")}</div>` : ""}</div>
       <div class="stats" style="margin:0"><div><b>${o.meetings - o.absent} of ${o.meetings}</b><span>meetings attended</span></div><div><b>${o.motions}</b><span>motions made</span></div><div><b>${o.no}</b><span>recorded no votes</span></div></div>
     </div></div>
     <div class="two-col ${bcls(body)}">
@@ -801,14 +807,14 @@ async function route() {
   try { const route = "/" + ({ m: "meeting", i: "issue", o: "official" }[parts[0]] || parts[0] || ""); window.va?.("pageview", { route, path: "/" + parts.join("/") }); } catch (e) {}
   try {
     if (!parts.length) await pageHome();
-    else if (parts[0] === "meetings") await pageMeetings(parts[1]);
+    else if (parts[0] === "meetings") await pageMeetings(parts[1], parts[2]);
     else if (parts[0] === "decisions") await pageDecisions(parts[1], parts[2]);
     else if (parts[0] === "m") await pageMeeting(parts[1]);
     else if (parts[0] === "calendar") await pageCalendar(parts[1]);
     else if (parts[0] === "issues") await pageIssues();
     else if (parts[0] === "i") await pageIssue(parts[1]);
-    else if (parts[0] === "officials") await pageOfficials();
-    else if (parts[0] === "o") await pageOfficial(parts[1], parts[2]);
+    else if (parts[0] === "officials") await pageOfficials(parts[1]);
+    else if (parts[0] === "o") await pageOfficial(parts[1], parts[2], parts[3]);
     else if (parts[0] === "search") await pageSearch(parts[1] || "");
     else if (parts[0] === "budget" && parts[1]) await pageBudget(parts[1]);
     else if (parts[0] === "budget") await pageBudgets();
