@@ -206,7 +206,7 @@ async function pageHome() {
   view.innerHTML = `
     ${topBlock(d)}
     <div class="sechead"><h2>This week and next</h2><a href="#/calendar">Full calendar</a></div>
-    ${strip.length ? `<div class="strip">${strip.map(upcomingCard).join("")}</div>${legend()}` : `<p class="muted">Nothing else scheduled in the next two weeks.</p>`}
+    ${strip.length ? `<div class="strip">${strip.map(upcomingCard).join("")}</div>` : `<p class="muted">Nothing else scheduled in the next two weeks.</p>`}
     ${d.ahead.length ? `<div class="sechead"><h2>Dates to watch</h2></div><div class="tablewrap"><table><tbody>${d.ahead.map((a) => `<tr><td style="white-space:nowrap"><b>${esc(dt(a.date, { weekday: "short", month: "short", day: "numeric" }))}</b></td><td><a href="#/i/${esc(a.key)}">${esc(a.title)}</a><div class="small muted">${esc(a.text)}</div></td><td>${a.publicCanSpeak ? `<span class="tag hearing">Public can speak</span>` : ""}</td></tr>`).join("")}</tbody></table></div>` : ""}
     <div class="two" style="margin-top:8px;gap:28px 32px;grid-template-columns:repeat(auto-fit,minmax(340px,1fr))">
       <div>
@@ -268,17 +268,24 @@ async function pageCalendar(ym) {
 }
 
 // Decisions: the home page's "Latest decisions" list, for every meeting
-async function pageDecisions(body) {
+async function pageDecisions(body, ym) {
+  if (body === "all") body = "";
   setNav("decisions"); title("Decisions");
   const d = await api(body ? { view: "decisions", body } : { view: "decisions" });
+  const months = [...new Set(d.meetings.map((m) => m.date.slice(0, 7)))];
+  if (ym && !months.includes(ym)) ym = "";
+  const shown = ym ? d.meetings.filter((m) => m.date.startsWith(ym)) : d.meetings;
   const groups = {};
-  for (const m of d.meetings) (groups[m.date.slice(0, 7)] ||= []).push(m);
+  for (const m of shown) (groups[m.date.slice(0, 7)] ||= []).push(m);
+  const mname = (k) => new Date(k + "-15T12:00").toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const href = (b, m) => `#/decisions/${b || "all"}${m ? "/" + m : ""}`;
   const block = (m) => { const items = m.items.slice().sort((a, b) => a.idx - b.idx); const passed = items.filter((i) => i.result === "passed").length; return `
     <div class="sechead dec"><h3><a href="#/m/${esc(m.id)}" class="${bcls(m.body)}">${esc(m.bodyName)}</a> <span class="sub">${esc(dt(m.date, { weekday: "short", month: "short", day: "numeric" }))} · ${items.length} item${items.length === 1 ? "" : "s"}${passed ? `, ${passed} passed` : ""}</span></h3></div>
     ${decidedList(m, items)}`; };
   view.innerHTML = `<h1>Decisions</h1><p class="muted">Every item that came before a board, newest first, with how it ended. Green passed, red failed, gold tabled, grey no vote.</p>
-    <div class="filters"><a class="chip ${body ? "" : "on"}" href="#/decisions">All boards</a>${Object.entries(d.bodies).map(([k, b]) => `<a class="chip ${body === k ? "on" : ""}" href="#/decisions/${k}">${esc(b.short)}</a>`).join("")}</div>
-    ${Object.entries(groups).map(([ym, ms]) => `<div class="sechead"><h2>${esc(new Date(ym + "-15T12:00").toLocaleDateString("en-US", { month: "long", year: "numeric" }))}</h2></div>${ms.map(block).join("")}`).join("") || `<p class="muted">Nothing yet.</p>`}`;
+    <div class="filters"><a class="chip ${body ? "" : "on"}" href="${href("", ym)}">All boards</a>${Object.entries(d.bodies).map(([k, b]) => `<a class="chip ${body === k ? "on" : ""}" href="${href(k, ym)}">${esc(b.short)}</a>`).join("")}</div>
+    <div class="filters months"><a class="chip ${ym ? "" : "on"}" href="${href(body, "")}">All months</a>${months.map((k) => `<a class="chip ${ym === k ? "on" : ""}" href="${href(body, k)}">${esc(new Date(k + "-15T12:00").toLocaleDateString("en-US", { month: "short", year: "2-digit" }).replace(" ", " ’"))}</a>`).join("")}</div>
+    ${Object.entries(groups).map(([k, ms]) => `<div class="sechead"><h2>${esc(mname(k))}</h2></div>${ms.map(block).join("")}`).join("") || `<p class="muted">Nothing ${ym ? "in " + esc(mname(ym)) : "yet"}.</p>`}`;
 }
 
 async function pageMeetings(body) {
@@ -795,7 +802,7 @@ async function route() {
   try {
     if (!parts.length) await pageHome();
     else if (parts[0] === "meetings") await pageMeetings(parts[1]);
-    else if (parts[0] === "decisions") await pageDecisions(parts[1]);
+    else if (parts[0] === "decisions") await pageDecisions(parts[1], parts[2]);
     else if (parts[0] === "m") await pageMeeting(parts[1]);
     else if (parts[0] === "calendar") await pageCalendar(parts[1]);
     else if (parts[0] === "issues") await pageIssues();
