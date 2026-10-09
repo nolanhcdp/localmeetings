@@ -622,7 +622,7 @@ async function viewArchive() {
   $("#arcStop").onclick = () => { ARC_STOP = true; $("#arcStop").textContent = "Stopping after this one…"; };
   $("#arcScan").onclick = async () => {
     $("#arcScan").disabled = true; $("#arcScan").textContent = "Reading the document pages…";
-    try { const r = await api("archiveScan", { year: ARC_YEAR }); toast(`Kokomo: ${r.city?.created?.length ?? 0} new meetings from ${r.city?.files ?? 0} files. County: ${r.county?.created?.length ?? 0} new from ${r.county?.packets ?? 0} packets.${r.errors?.length ? " " + r.errors.join(" ") : ""}`, 9000); await arcShow(); }
+    try { const r = await api("archiveScan", { year: ARC_YEAR }); toast(`Kokomo: ${r.city?.created?.length ?? 0} new meetings from ${r.city?.files ?? 0} files. County: ${r.county?.created?.length ?? 0} new${r.county?.adopted?.length ? ` and ${r.county.adopted.length} already on file` : ""} from ${r.county?.packets ?? 0} packets.${r.errors?.length ? " " + r.errors.join(" ") : ""}`, 9000); await arcShow(); }
     catch (e) { toast(e.message, 8000); }
     $("#arcScan").disabled = false; $("#arcScan").textContent = "1. Find documents";
   };
