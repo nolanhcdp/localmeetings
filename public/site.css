@@ -357,3 +357,10 @@ dialog .row { display: flex; justify-content: flex-end; gap: 8px; }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 @media (max-width: 700px) { .two { grid-template-columns: 1fr; } .item { padding: 16px; } .band { margin-bottom: 20px; } }
 tr.muted td { color: var(--none); }
+
+/* the one-paragraph "why" under an issue's status, closed by default */
+.status details.why { margin-top: 8px; font-size: .95rem; }
+.status details.why summary { cursor: pointer; color: var(--link); text-decoration: underline; text-underline-offset: 3px; list-style: none; display: inline; }
+.status details.why summary::-webkit-details-marker { display: none; }
+.status details.why[open] summary { color: var(--faint); text-decoration: none; }
+.status details.why p { margin: 6px 0 0; color: var(--soft); max-width: 68ch; }
