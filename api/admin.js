@@ -65,7 +65,7 @@ export async function POST(request) {
       case "assign": return json({ ok: true, video: await assignVideo(p.videoId, p.body, p.date) });
       case "scan": return json(await scanPackets());
       case "videoInventory": { // scoping past years: what each channel has for a year, with caption availability
-        const year = Number(body.year) || new Date().getFullYear() - 1;
+        const year = Number(p.year) || new Date().getFullYear() - 1;
         const out = {};
         for (const [id, gov] of Object.entries(CHANNELS)) out[gov] = await videoInventory(id, year);
         return json({ year, ...out });
