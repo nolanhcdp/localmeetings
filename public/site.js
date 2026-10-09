@@ -165,17 +165,46 @@ function meetingRow(m) {
   </a>`;
 }
 
+// The top of the home page: the line, two sentences, and the day's facts. Nothing else above the fold asks for anything.
+const ago = (iso) => { if (!iso) return ""; const ms = Date.now() - Date.parse(iso); const h = ms / 36e5; if (h < 1) return `${Math.max(1, Math.round(ms / 6e4))} min ago`; if (h < 24) return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }); const d = Math.round(h / 24); return d === 1 ? "yesterday" : new Date(iso).toLocaleDateString("en-US", { weekday: "long" }); };
+const dayWord = (d) => { const n = daysUntil(d); return n === 0 ? "today" : n === 1 ? "tomorrow" : n === -1 ? "yesterday" : n > 1 && n < 7 ? dt(d, { weekday: "long" }) : n < 0 && n > -7 ? dt(d, { weekday: "long" }) : dt(d, { month: "short", day: "numeric" }); };
+// Visits are remembered in this browser only. A return within two hours counts as the same visit.
+function lastVisit() {
+  try {
+    const now = Date.now(), seen = Number(localStorage.getItem("sr:seen") || 0), prev = Number(localStorage.getItem("sr:prev") || 0);
+    if (!seen) { localStorage.setItem("sr:seen", String(now)); return 0; }
+    if (now - seen > 2 * 36e5) { localStorage.setItem("sr:prev", String(seen)); localStorage.setItem("sr:seen", String(now)); return seen; }
+    return prev;
+  } catch (e) { return 0; }
+}
+function topBlock(d) {
+  const since = lastVisit();
+  const isNew = (iso) => since && iso && Date.parse(iso) > since;
+  const newUps = d.recent.filter((m) => isNew(m.addedAt)).length, newAg = d.upcoming.filter((u) => isNew(u.previewAt)).length;
+  const n = d.next, latest = d.recent[0];
+  const nextLine = n ? `<a href="#/m/${esc(n.id)}" class="${bcls(n.body)}"><span class="dot"></span>${esc(BOARD_SHORT[n.body] || n.bodyName)}, ${esc(dayWord(n.date))}${n.time ? ` ${esc(tshort(n.time))}` : ""}</a><div class="k">${[n.special, n.state === "previewed" ? `${n.items.length} item${n.items.length === 1 ? "" : "s"}` : n.state === "agenda" ? "agenda posted" : n.maybeCanceled ? "may be canceled" : "agenda not posted yet", n.state === "previewed" && n.items.some((it) => it.amount) ? money(n.items.reduce((a, it) => a + (it.amount || 0), 0)) + " up for a decision" : "", n.items?.some((it) => it.publicHearing) ? `<span class="tag hearing">Public hearing</span>` : ""].filter(Boolean).map((x) => x.startsWith("<") ? x : esc(x)).join(" · ")}</div>` : `<span class="k">Nothing scheduled in the next two weeks.</span>`;
+  const passed = latest ? latest.items.filter((i) => i.result === "passed").length : 0, failed = latest ? latest.items.filter((i) => i.result === "failed").length : 0;
+  const latestLine = latest ? `<a href="#/m/${esc(latest.id)}" class="${bcls(latest.body)}"><span class="dot"></span>${esc(BOARD_SHORT[latest.body] || latest.bodyName)}, ${esc(dayWord(latest.date))}</a><div class="k">${esc(`${latest.items.length} item${latest.items.length === 1 ? "" : "s"}${latest.items.length && passed === latest.items.filter((i) => i.result).length && passed ? ", all approved" : passed || failed ? `, ${passed} approved${failed ? `, ${failed} voted down` : ""}` : ""}`)}${newUps + newAg ? ` · <b class="new">${newUps + newAg} new</b> since ${esc(ago(new Date(since).toISOString()))}` : ""}</div>` : `<span class="k">No write-ups yet.</span>`;
+  return `<div class="top">
+    <div class="top-say">
+      <h1 class="line">So every vote has a witness.</h1>
+      <p>Every public meeting of Howard County and Kokomo: the agenda before, the votes after, and where each decision goes next. Built from the packets, minutes and videos the governments post. <a href="#/about">How this works</a></p>
+    </div>
+    <div class="panel top-facts">
+      <div class="date"><span>${esc(dt(d.today, { weekday: "long", month: "long", day: "numeric" }))}</span>${d.updatedAt ? `<span class="u">Updated ${esc(ago(d.updatedAt))}</span>` : ""}</div>
+      <div class="fl"><b>Next</b><div>${nextLine}</div></div>
+      <div class="fl"><b>Latest</b><div>${latestLine}</div></div>
+    </div>
+  </div>`;
+}
 async function pageHome() {
   setNav("home"); title("");
   const d = await api({ view: "home" });
-  const up = d.upcoming.filter((u) => !u.cancelled);
-  const lead = up.find((u) => u.special) || up.find((u) => u.state === "previewed") || up[0];
-  if (lead) lead.facts = leadFacts(lead);
-  const strip = d.upcoming.filter((u) => daysUntil(u.date) <= 14 && u.id !== lead?.id);
+  const strip = d.upcoming.filter((u) => daysUntil(u.date) <= 14);
   const recent = d.recent.find((m) => m.items.length) || d.recent[0];
   const decided = recent ? recent.items.filter((i) => !["minutes", "claims", "report"].includes(i.category)).sort((a, b) => (b.amount || 0) - (a.amount || 0) || a.idx - b.idx).slice(0, 5) : [];
   view.innerHTML = `
-    ${lead ? leadBlock(lead) : `<div class="card muted">Nothing scheduled in the next two weeks.</div>`}
+    ${topBlock(d)}
     <div class="sechead"><h2>This week and next</h2><a href="#/calendar">Full calendar</a></div>
     ${strip.length ? `<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(210px,1fr))">${strip.map(upcomingCard).join("")}</div>${legend()}` : `<p class="muted">Nothing else scheduled in the next two weeks.</p>`}
     ${d.ahead.length ? `<div class="sechead"><h2>Dates to watch</h2></div><div class="tablewrap"><table><tbody>${d.ahead.map((a) => `<tr><td style="white-space:nowrap"><b>${esc(dt(a.date, { weekday: "short", month: "short", day: "numeric" }))}</b></td><td><a href="#/i/${esc(a.key)}">${esc(a.title)}</a><div class="small muted">${esc(a.text)}</div></td><td>${a.publicCanSpeak ? `<span class="tag hearing">Public can speak</span>` : ""}</td></tr>`).join("")}</tbody></table></div>` : ""}
