@@ -1,6 +1,6 @@
 // Everything the review screen needs, behind ADMIN_CODE.
 import { listMeetings, getMeeting, saveMeeting, listVideos, getVideo, listIssues, saveIssue, getJSON, setJSON, listRefs, getRef, redis, getMany } from "../lib/store.js";
-import { approve, unapprove, assignVideo, scanPackets, getRoster, readyToDraft, normalizeRecord, importFiles, rebuildAllIssues, rebuildIssuesFor, resolveItem, refreshDateline, exportForChat, needsCheck, needsPreview, needsEnrich } from "../lib/pipeline.js";
+import { approve, unapprove, assignVideo, scanPackets, getRoster, readyToDraft, normalizeRecord, importFiles, rebuildAllIssues, rebuildIssuesFor, resolveItem, exportForChat, needsCheck, needsPreview, needsEnrich } from "../lib/pipeline.js";
 import { itemLabel, recordOf } from "../lib/publish.js";
 import { insights } from "../lib/insights.js";
 import { listMembers, createMember, updateMember, askConfig, askLog, spendStatus, ADMIN_MEMBER } from "../lib/ask.js";
@@ -62,7 +62,6 @@ export async function POST(request) {
       }
       case "assign": return json({ ok: true, video: await assignVideo(p.videoId, p.body, p.date) });
       case "scan": return json(await scanPackets());
-      case "dateline": return json(await refreshDateline({ force: true }));
       case "roster": await setJSON("config:roster", p.roster); return json({ ok: true });
       case "issues": return json({ issues: (await listIssues()).map((i) => ({ ...i, kind: classifyIssue(i), guessed: classifyIssue({ ...i, kindOverride: null }) })), kinds: KINDS });
       case "issueKind": { // admin override of the roadmap kind; "" clears the override, "none" means no roadmap
