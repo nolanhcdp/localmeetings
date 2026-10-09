@@ -7,6 +7,8 @@ import { listMembers, createMember, updateMember, askConfig, askLog, spendStatus
 import { BODIES, GLOSSARY } from "../lib/county.js";
 import { subCount, broadcast, pushReady, prefStats } from "../lib/push.js";
 import { classifyIssue, KINDS } from "../lib/roadmaps.js";
+import { videoInventory } from "../lib/live.js";
+import { CHANNELS } from "../lib/county.js";
 import { json, fail, isAdmin } from "../lib/http.js";
 export const config = { maxDuration: 60 };
 
@@ -62,6 +64,12 @@ export async function POST(request) {
       }
       case "assign": return json({ ok: true, video: await assignVideo(p.videoId, p.body, p.date) });
       case "scan": return json(await scanPackets());
+      case "videoInventory": { // scoping past years: what each channel has for a year, with caption availability
+        const year = Number(body.year) || new Date().getFullYear() - 1;
+        const out = {};
+        for (const [id, gov] of Object.entries(CHANNELS)) out[gov] = await videoInventory(id, year);
+        return json({ year, ...out });
+      }
       case "roster": await setJSON("config:roster", p.roster); return json({ ok: true });
       case "issues": return json({ issues: (await listIssues()).map((i) => ({ ...i, kind: classifyIssue(i), guessed: classifyIssue({ ...i, kindOverride: null }) })), kinds: KINDS });
       case "issueKind": { // admin override of the roadmap kind; "" clears the override, "none" means no roadmap
