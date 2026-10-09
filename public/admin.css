@@ -80,3 +80,5 @@ details > summary { cursor: pointer; color: var(--muted); margin: .4rem 0; }
 .lbl.l-hidden { background: #eee; color: #666; }
 .btn.on { outline: 2px solid var(--accent); }
 @media (prefers-color-scheme: dark) { .hold { background: #3a2222; border-color: #6b3434; } .lbl { background: #232a31; color: #a9c1d8; } .lbl.l-confirmed { background: #1d3325; color: #7fd09a; } .lbl.l-unclear { background: #3a2f17; color: #f0c46a; } .lbl.l-held { background: #3a2222; color: #f19b9b; } }
+.chip { border: 1px solid var(--line, #d9d6cf); background: #fff; color: inherit; border-radius: 4px; padding: 5px 12px; font: inherit; font-weight: 600; cursor: pointer; }
+.chip.on { background: #1c1c1c; color: #fff; border-color: #1c1c1c; }
