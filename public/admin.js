@@ -651,7 +651,11 @@ async function viewSettings() {
   let ARC_STOP = false;
   const arcShow = async () => {
     const year = Number($("#arcYear").value);
-    const r = await api("archiveList", { year });
+    $("#arcOut").innerHTML = `<p class="muted">Loading…</p>`;
+    let r;
+    try { r = await api("archiveList", { year }); if (r.error) throw new Error(r.error); }
+    catch (e) { $("#arcOut").innerHTML = `<p class="err">${esc(e.message)}${/Unknown action/.test(e.message) ? " — the server side (api/admin.js and lib/pipeline.js) hasn't been deployed yet." : ""}</p>`; return; }
+    if (!r.meetings.length) { $("#arcOut").innerHTML = `<p class="muted">No ${year} meetings yet. Click "1. Find documents" first.</p>`; return; }
     const by = {}; for (const m of r.meetings) (by[m.body] ||= []).push(m);
     const mark = (ok, word) => ok ? `<span style="color:var(--ok,#1a8f4a)">${word}</span>` : `<span class="muted">—</span>`;
     const draftable = (m) => m.status !== "drafted" && m.status !== "approved" && m.status !== "skipped" && !m.cancelled && (["city-council", "city-works", "plan"].includes(m.body) ? m.transcript : (m.minutes || m.packet));
