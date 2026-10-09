@@ -391,6 +391,7 @@ tr.muted td { color: var(--none); }
 .sechead.dec h3 a { color: var(--board, var(--ink)); text-decoration: none; }
 .sechead.dec h3 a:hover { text-decoration: underline; }
 .sechead.dec .sub { font-family: var(--body); font-weight: 400; font-size: .92rem; color: var(--faint); margin-left: 8px; }
-.filters.months { margin-top: -8px; }
-.filters.months .chip { font-weight: 500; }
+.filters.months { margin-top: -8px; align-items: center; }
+.filters.months .chip.soft { font-weight: 500; padding: 3px 10px; font-size: .85rem; }
+.filters.months .chipsep { width: 1px; height: 22px; background: var(--line); margin: 0 6px; }
 .filters.years { margin-top: -8px; }

@@ -269,25 +269,28 @@ async function pageCalendar(ym) {
 
 const yearChips = (years, year, href) => years.length > 1 ? `<div class="filters years"><a class="chip ${year ? "" : "on"}" href="${href("")}">All years</a>${years.map((y) => `<a class="chip ${year === y ? "on" : ""}" href="${href(y)}">${y}</a>`).join("")}</div>` : "";
 // Decisions: the home page's "Latest decisions" list, for every meeting
-async function pageDecisions(body, ym) {
+async function pageDecisions(body, sel) {
   if (body === "all") body = "";
   setNav("decisions"); title("Decisions");
-  const year = /^\d{4}$/.test(ym || "") ? ym : "";
+  // sel is a year (2025) or a month (2025-09); a month implies its year
+  const month = /^\d{4}-\d{2}$/.test(sel || "") ? sel : "";
+  const year = month ? month.slice(0, 4) : /^\d{4}$/.test(sel || "") ? sel : "";
   const d = await api({ view: "decisions", ...(body ? { body } : {}), ...(year ? { year } : {}) });
   const months = [...new Set(d.meetings.map((m) => m.date.slice(0, 7)))];
-  if (ym && !year && !months.includes(ym)) ym = "";
-  const shown = ym && !year ? d.meetings.filter((m) => m.date.startsWith(ym)) : d.meetings;
+  const shown = month ? d.meetings.filter((m) => m.date.startsWith(month)) : d.meetings;
   const groups = {};
   for (const m of shown) (groups[m.date.slice(0, 7)] ||= []).push(m);
   const mname = (k) => new Date(k + "-15T12:00").toLocaleDateString("en-US", { month: "long", year: "numeric" });
-  const href = (b, m) => `#/decisions/${b || "all"}${m ? "/" + m : ""}`;
+  const href = (b, x) => `#/decisions/${b || "all"}${x ? "/" + x : ""}`;
   const block = (m) => { const items = m.items.slice().sort((a, b) => a.idx - b.idx); const passed = items.filter((i) => i.result === "passed").length; return `
     <div class="sechead dec"><h3><a href="#/m/${esc(m.id)}" class="${bcls(m.body)}">${esc(m.bodyName)}</a> <span class="sub">${esc(dt(m.date, { weekday: "short", month: "short", day: "numeric" }))} · ${items.length} item${items.length === 1 ? "" : "s"}${passed ? `, ${passed} passed` : ""}</span></h3></div>
     ${decidedList(m, items)}`; };
+  const years = d.years || [];
   view.innerHTML = `<h1>Decisions</h1><p class="muted">Every item that came before a board, newest first, with how it ended. Green passed, red failed, gold tabled, grey no vote.</p>
-    <div class="filters"><a class="chip ${body ? "" : "on"}" href="${href("", ym)}">All boards</a>${Object.entries(d.bodies).map(([k, b]) => `<a class="chip ${body === k ? "on" : ""}" href="${href(k, ym)}">${esc(b.short)}</a>`).join("")}</div>
-    <div class="filters months">${(d.years || []).length > 1 ? `<a class="chip ${ym ? "" : "on"}" href="${href(body, "")}">All</a>${(d.years || []).map((y) => `<a class="chip ${year === y ? "on" : ""}" href="${href(body, y)}">${y}</a>`).join("")}<span style="width:10px"></span>` : `<a class="chip ${ym ? "" : "on"}" href="${href(body, "")}">All months</a>`}${months.map((k) => `<a class="chip ${ym === k ? "on" : ""}" href="${href(body, k)}">${esc(new Date(k + "-15T12:00").toLocaleDateString("en-US", { month: "short", year: "2-digit" }).replace(" ", " ’"))}</a>`).join("")}</div>
-    ${Object.entries(groups).map(([k, ms]) => `<div class="sechead"><h2>${esc(mname(k))}</h2></div>${ms.map(block).join("")}`).join("") || `<p class="muted">Nothing ${ym ? "in " + esc(mname(ym)) : "yet"}.</p>`}`;
+    <div class="filters"><a class="chip ${body ? "" : "on"}" href="${href("", sel)}">All boards</a>${Object.entries(d.bodies).map(([k, b]) => `<a class="chip ${body === k ? "on" : ""}" href="${href(k, sel)}">${esc(b.short)}</a>`).join("")}</div>
+    <div class="filters months">${years.length > 1 ? `<a class="chip ${year ? "" : "on"}" href="${href(body, "")}">All years</a>${years.map((y) => `<a class="chip ${year === y ? "on" : ""}" href="${href(body, y)}">${y}</a>`).join("")}` : ""}
+      ${year || years.length <= 1 ? `${years.length > 1 ? `<span class="chipsep"></span>` : ""}${months.map((k) => `<a class="chip soft ${month === k ? "on" : ""}" href="${href(body, month === k ? (years.length > 1 ? year : "") : k)}">${esc(new Date(k + "-15T12:00").toLocaleDateString("en-US", { month: "short" }))}</a>`).join("")}` : ""}</div>
+    ${Object.entries(groups).map(([k, ms]) => `<div class="sechead"><h2>${esc(mname(k))}</h2></div>${ms.map(block).join("")}`).join("") || `<p class="muted">Nothing ${month ? "in " + esc(mname(month)) : year ? "in " + esc(year) : "yet"}.</p>`}`;
 }
 
 async function pageMeetings(body, year) {
