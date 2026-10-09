@@ -77,6 +77,7 @@ async function viewMeetings() {
         ${counts.fill ? `<button id="fillOld" class="primary" title="Uses the Claude API">Fill in older meetings (${counts.fill})</button>` : ""}
         <button id="export" title="Download every draft so Claude can check them against minutes in a chat, on your plan">Export for Claude</button>
         <button id="scan" title="Checks the calendars and both document pages, and previews any meeting in the next two days that has a new agenda">Check now</button>
+        <button id="dateline" title="Rewrites the opening paragraph on the home page from today's data (about 2¢). It also rewrites itself once a day and when a new write-up lands.">Rewrite home paragraph</button>
         <button id="draftAll" class="primary" ${counts.ready ? "" : "disabled"}>Draft all ready (${counts.ready})</button>
       </div>
     </div>
@@ -117,6 +118,12 @@ async function viewMeetings() {
     a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: "application/json" }));
     a.download = `localmeetings-export-${new Date().toISOString().slice(0, 10)}.json`; a.click();
     toast("Saved to your Downloads. Move it into Vote Tracker/data and tell Claude in the chat.", 7000);
+  };
+  $("#dateline").onclick = async () => {
+    $("#dateline").disabled = true;
+    try { const r = await api("dateline"); if (r.error) throw new Error(r.error); toast(`Written: “${(r.segments || []).map((x) => x.text).join("").slice(0, 140)}…”${r.cents != null ? ` (${r.cents}¢)` : ""}`, 9000); }
+    catch (e) { toast(e.message, 6000); }
+    $("#dateline").disabled = false;
   };
   $("#scan").onclick = async () => {
     $("#scan").disabled = true; $("#scan").textContent = "Checking… up to a couple of minutes";

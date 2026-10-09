@@ -165,32 +165,76 @@ function meetingRow(m) {
   </a>`;
 }
 
+// Home. A dateline sentence, then three fixed sections. Nothing asks for anything above the footer.
+const todayWord = (d) => { const n = daysUntil(d); return n === 0 ? "Today" : n === 1 ? "Tomorrow" : n > 1 && n < 7 ? dt(d, { weekday: "short" }) : dt(d, { month: "short", day: "numeric" }); };
+const ago = (iso) => { if (!iso) return ""; const ms = Date.now() - Date.parse(iso); const h = ms / 36e5; if (h < 1) return `${Math.max(1, Math.round(ms / 6e4))} min ago`; if (h < 24) return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }); const d = Math.round(h / 24); return d === 1 ? "yesterday" : new Date(iso).toLocaleDateString("en-US", { weekday: "long" }); };
+// Remember visits without an account: the previous visit's time is what "new since" counts against. Within two hours counts as the same visit.
+function visitMarks() {
+  try {
+    const now = Date.now(), seen = Number(localStorage.getItem("sr:seen") || 0), prev = Number(localStorage.getItem("sr:prev") || 0);
+    if (!seen) { localStorage.setItem("sr:seen", String(now)); return { since: 0 }; }
+    if (now - seen > 2 * 36e5) { localStorage.setItem("sr:prev", String(seen)); localStorage.setItem("sr:seen", String(now)); return { since: seen }; }
+    return { since: prev };
+  } catch (e) { return { since: 0 }; }
+}
+function fallbackDateline(d) {
+  const segs = [];
+  if (d.next) { const n = daysUntil(d.next.date); segs.push({ text: `${n === 0 ? "Today" : n === 1 ? "Tomorrow" : dt(d.next.date, { weekday: "long" })} at ${tshort(d.next.time || "")} the ` }, { text: `${d.next.bodyName} meets`, link: `#/m/${d.next.id}` }, { text: d.next.items?.length ? ` with ${d.next.items.length} items on the agenda${d.next.special ? ` (${d.next.special.toLowerCase()})` : ""}.` : d.next.special ? ` for ${d.next.special.toLowerCase()}.` : "." }); }
+  const dec = d.decisions.find((x) => x.result === "passed" || x.result === "failed");
+  if (dec) segs.push({ text: ` ${dt(dec.date, { weekday: "long" })} the ${BOARD_SHORT[dec.body] || dec.bodyName} ` }, { text: `${dec.result === "passed" ? "approved" : "voted down"}: ${dec.title}`, link: `#/m/${dec.meetingId}#item-${dec.idx}` }, { text: "." });
+  return segs.length ? segs : [{ text: "Nothing is scheduled in the next two weeks." }];
+}
 async function pageHome() {
   setNav("home"); title("");
   const d = await api({ view: "home" });
-  const up = d.upcoming.filter((u) => !u.cancelled);
-  const lead = up.find((u) => u.special) || up.find((u) => u.state === "previewed") || up[0];
-  if (lead) lead.facts = leadFacts(lead);
-  const strip = d.upcoming.filter((u) => daysUntil(u.date) <= 14 && u.id !== lead?.id);
-  const recent = d.recent.find((m) => m.items.length) || d.recent[0];
-  const decided = recent ? recent.items.filter((i) => !["minutes", "claims", "report"].includes(i.category)).sort((a, b) => (b.amount || 0) - (a.amount || 0) || a.idx - b.idx).slice(0, 5) : [];
+  const marks = visitMarks();
+  const isNew = (iso) => marks.since && iso && Date.parse(iso) > marks.since;
+  const newDecisions = d.decisions.filter((x) => isNew(x.addedAt)).length;
+  const newAgendas = d.upcoming.filter((u) => isNew(u.previewAt)).length;
+  const newMeetings = new Set(d.decisions.filter((x) => isNew(x.addedAt)).map((x) => x.meetingId)).size;
+  const segs = d.dateline?.segments || fallbackDateline(d);
+  const up = d.upcoming.filter((u) => !(u.date === d.today && u.over)).slice(0, 5);
+  const seen = new Set();
   view.innerHTML = `
-    ${lead ? leadBlock(lead) : `<div class="card muted">Nothing scheduled in the next two weeks.</div>`}
-    <div class="sechead"><h2>This week and next</h2><a href="#/calendar">Full calendar</a></div>
-    ${strip.length ? `<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(210px,1fr))">${strip.map(upcomingCard).join("")}</div>${legend()}` : `<p class="muted">Nothing else scheduled in the next two weeks.</p>`}
-    ${d.ahead.length ? `<div class="sechead"><h2>Dates to watch</h2></div><div class="tablewrap"><table><tbody>${d.ahead.map((a) => `<tr><td style="white-space:nowrap"><b>${esc(dt(a.date, { weekday: "short", month: "short", day: "numeric" }))}</b></td><td><a href="#/i/${esc(a.key)}">${esc(a.title)}</a><div class="small muted">${esc(a.text)}</div></td><td>${a.publicCanSpeak ? `<span class="tag hearing">Public can speak</span>` : ""}</td></tr>`).join("")}</tbody></table></div>` : ""}
-    <div class="two" style="margin-top:8px;gap:28px 32px;grid-template-columns:repeat(auto-fit,minmax(340px,1fr))">
-      <div>
-        <div class="sechead"><h2>Latest decisions</h2><a href="#/meetings">All meetings</a>${recent ? `<span class="sub">${esc(recent.bodyName)}, ${esc(dt(recent.date, { month: "short", day: "numeric" }))} · ${recent.items.length} items, ${recent.items.filter((i) => i.result === "passed").length} passed</span>` : ""}</div>
-        ${recent ? decidedList(recent, decided) + `<div class="legend"><span><i class="swatch" style="background:var(--pass)"></i>Passed</span><span><i class="swatch" style="background:var(--fail)"></i>Failed</span><span><i class="swatch" style="background:var(--gold)"></i>Tabled</span><span><i class="swatch" style="background:var(--none)"></i>No vote</span></div>` : `<p class="muted">Nothing yet.</p>`}
+    <div class="nextline">
+      ${d.next ? `<span><span class="dot ${bcls(d.next.body)}"></span><b>Next meeting</b> · <a href="#/m/${esc(d.next.id)}">${esc(d.next.bodyName)}, ${esc(todayWord(d.next.date).replace(/^(Today|Tomorrow)$/, (w) => w.toLowerCase()))} ${esc(tshort(d.next.time))}</a>${d.next.location ? `, ${esc(d.next.location.split(",")[0])}` : ""}${d.next.items?.length ? ` <span class="k">· ${d.next.items.length} items</span>` : ""}</span>` : `<span class="k">Nothing scheduled in the next two weeks.</span>`}
+      ${d.then ? `<span class="k">Then ${esc(BOARD_SHORT[d.then.body] || d.then.bodyName)}, ${esc(todayWord(d.then.date))} ${esc(tshort(d.then.time))}</span>` : ""}
+      ${d.updatedAt ? `<span class="k last">Last update ${esc(ago(d.updatedAt))}</span>` : ""}
+    </div>
+    <div class="dateline">
+      <div class="d">${esc(dt(d.today, { weekday: "long", month: "long", day: "numeric" }))}</div>
+      <p>${segs.map((sg) => sg.link ? `<a href="${esc(sg.link)}" class="${sg.link.startsWith("#/m/") ? bcls(d.upcoming.concat(d.recent).find((m) => sg.link === "#/m/" + m.id || sg.link.startsWith("#/m/" + m.id + "#"))?.body || "") : ""}">${esc(sg.text)}</a>` : esc(sg.text)).join("")}</p>
+      ${newDecisions + newAgendas ? `<div class="since"><b>${newDecisions + newAgendas} new</b> since you were here ${esc(ago(new Date(marks.since).toISOString()))}: ${[newMeetings ? `${newMeetings} write-up${newMeetings === 1 ? "" : "s"}` : "", newAgendas ? `${newAgendas} agenda${newAgendas === 1 ? "" : "s"}` : ""].filter(Boolean).join(" and ")}.</div>` : ""}
+    </div>
+    <div class="homecols">
+      <div class="sec">
+        <h2>What just happened <small>newest first</small></h2>
+        <div class="stamp">${d.recent[0]?.addedAt ? `Latest write-up added ${esc(ago(d.recent[0].addedAt))}` : d.recent[0] ? `Latest write-up: ${esc(d.recent[0].bodyName)}, ${esc(dt(d.recent[0].date, { month: "short", day: "numeric" }))}` : "No write-ups yet"}</div>
+        <div class="panel hlist">
+          ${d.decisions.map((x) => `<a class="hrow ${bcls(x.body)}" href="#/m/${esc(x.meetingId)}#item-${x.idx}"><span class="mark ${resultOf(x)}"></span><span><b>${esc(x.title)}</b>${isNew(x.addedAt) ? `<span class="newtag">New</span>` : ""}<div class="sub"><span class="bd">${esc(BOARD_SHORT[x.body] || x.bodyName)}</span> · ${esc(dt(x.date, { weekday: "short", month: "short", day: "numeric" }))}${x.voteText ? ` · ${esc(x.voteText)}` : x.result ? "" : ` · ${esc(stageText(x.stage))}`}</div></span><span class="r">${x.amount ? money(x.amount) + "<br>" : ""}${esc(x.result === "passed" ? "Approved" : x.result === "failed" ? "Denied" : x.result === "tabled" ? "Tabled" : x.result ? x.result[0].toUpperCase() + x.result.slice(1) : "No vote")}</span></a>`).join("") || `<p class="muted" style="padding:14px 16px">Nothing yet.</p>`}
+          <a class="more" href="#/meetings">All ${d.counts.meetings} meetings</a>
+        </div>
       </div>
       <div>
-        <div class="sechead"><h2>Issues to follow</h2><a href="#/issues">All ${d.counts.issues}</a><span class="sub">One matter, every board, in order</span></div>
-        <div style="display:flex;flex-direction:column;gap:10px">${d.issues.slice(0, 4).map((i) => issueCard(i, d.bodies)).join("")}</div>
+        <div class="sec">
+          <h2>What's coming up</h2>
+          <div class="stamp">${up.length ? `Agendas posted for ${up.filter((u) => u.state === "previewed" || u.state === "agenda").length} of ${up.length}` : ""}</div>
+          <div class="panel hlist up">
+            ${up.map((u) => `<a class="hrow ${bcls(u.body)} ${daysUntil(u.date) <= 0 ? "today" : ""}" href="#/m/${esc(u.id)}"><span class="when">${esc(todayWord(u.date))}<small>${esc(tshort(u.time))}</small></span><span><b>${esc(BOARD_SHORT[u.body] || u.bodyName)}</b>${u.special ? ` · ${esc(u.special)}` : ""}${u.cancelled ? ` <span class="tag failed">Canceled</span>` : ""}<div class="sub">${u.cancelled ? "" : u.state === "previewed" ? `${u.items.length} items${u.items.some((it) => it.publicHearing) ? `<span class="speak">Public hearing</span>` : ""}` : u.state === "agenda" ? "Agenda posted" : u.maybeCanceled ? "May be canceled" : u.body === "city-works" ? "Weekly · usually bids and change orders" : "Agenda not posted yet"}</div></span></a>`).join("") || `<p class="muted" style="padding:14px 16px">Nothing scheduled in the next two weeks.</p>`}
+            <a class="more" href="#/calendar">Full calendar</a>
+          </div>
+        </div>
+        <div class="sec" style="margin-top:30px">
+          <h2>Still moving</h2>
+          <div class="stamp">Things with a next step</div>
+          <div class="panel hlist moving">
+            ${d.moving.map((i) => { const p = i.progress; const lb = i.bodies?.[i.bodies.length - 1] || ""; return `<a class="hrow ${bcls(lb)}" href="#/i/${esc(i.key)}"><span><span class="dots">${p.states.map((st) => `<i class="${st === "done" ? "" : "e"}"></i>`).join("")}</span><b>${esc(i.title)}</b><div class="sub">Next: ${esc(p.next.title.toLowerCase())}, ${esc(p.next.bodyName)} · ${p.next.scheduled ? esc(todayWord(p.next.scheduled.date).replace(/^(Today|Tomorrow)$/, (w) => w.toLowerCase())) : "no date yet"}</div></span></a>`; }).join("") || `<p class="muted" style="padding:14px 16px">Nothing with a dated next step right now.</p>`}
+            <a class="more" href="#/issues">All ${d.counts.issues} issues</a>
+          </div>
+        </div>
       </div>
     </div>
-    <div class="sechead"><h2>Earlier meetings</h2><a href="#/meetings">All ${d.counts.meetings}</a></div>
-    <div class="grid">${d.recent.filter((m) => m !== recent).slice(0, 3).map(meetingRow).join("") || `<p class="muted">Nothing yet.</p>`}</div>
+    ${d.counts.votes ? `<p class="tally">${d.counts.votes} votes recorded across ${d.counts.meetings} meetings${d.counts.since ? ` since ${esc(dt(d.counts.since, { month: "long", year: "numeric" }))}` : ""}. Every one links to the minute of video or the page of the packet it came from.</p>` : ""}
     <div id="alertsSlot" style="margin-top:28px"></div>`;
   mountAlerts(document.getElementById("alertsSlot"));
 }

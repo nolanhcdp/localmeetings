@@ -364,3 +364,45 @@ tr.muted td { color: var(--none); }
 .status details.why summary::-webkit-details-marker { display: none; }
 .status details.why[open] summary { color: var(--faint); text-decoration: none; }
 .status details.why p { margin: 6px 0 0; color: var(--soft); max-width: 68ch; }
+
+/* Home: the permanent next-meeting line, the dateline, and three fixed lists */
+.nextline { display: flex; flex-wrap: wrap; gap: 6px 26px; align-items: center; padding: 10px 0 12px; border-bottom: 1px solid var(--line); font-size: .98rem; }
+.nextline a { color: var(--ink); text-decoration: none; font-weight: 600; }
+.nextline a:hover { color: var(--council); }
+.nextline .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--board, var(--ink)); margin-right: 7px; vertical-align: 1px; }
+.nextline .k { color: var(--faint); font-weight: 400; }
+.nextline .last { margin-left: auto; font-size: .9rem; }
+.dateline { padding: 30px 0 6px; }
+.dateline .d { font-family: var(--display); font-size: 1.15rem; color: var(--faint); margin-bottom: 6px; }
+.dateline p { font-family: var(--display); font-weight: 700; font-size: clamp(1.45rem, 3vw, 2.05rem); line-height: 1.25; margin: 0; max-width: 980px; }
+.dateline p a { color: var(--board, var(--ink)); text-decoration: none; border-bottom: 2px solid var(--line); }
+.dateline p a:hover { border-color: currentColor; }
+.dateline .since { color: var(--faint); margin-top: 10px; font-size: .95rem; }
+.dateline .since b { color: var(--gold-ink); background: var(--gold); padding: 1px 7px; border-radius: 3px; }
+.homecols { display: grid; grid-template-columns: 1.6fr 1fr; gap: 34px; margin-top: 26px; }
+@media (max-width: 860px) { .homecols { grid-template-columns: 1fr; gap: 28px; } .nextline .last { margin-left: 0; } }
+.sec h2 { font-size: 1.5rem; margin: 0 0 4px; display: flex; align-items: baseline; gap: 14px; }
+.sec h2 small { font-family: var(--body); font-weight: 400; font-size: .92rem; color: var(--faint); }
+.sec .stamp { font-size: .9rem; color: var(--faint); margin-bottom: 12px; min-height: 1.2em; }
+.hlist .hrow { display: grid; grid-template-columns: 14px 1fr auto; gap: 12px; align-items: start; padding: 13px 16px; border-top: 1px solid var(--hair); text-decoration: none; color: var(--ink); }
+.hlist .hrow:first-child { border-top: 0; }
+.hlist .hrow:hover { background: var(--paper); }
+.hlist .mark { width: 12px; height: 12px; border-radius: 50%; margin-top: 7px; background: var(--none); }
+.hlist .mark.passed { background: var(--pass); } .hlist .mark.failed { background: var(--fail); } .hlist .mark.tabled { background: var(--gold); }
+.hlist .mark.none { background: transparent; border: 2px solid var(--none); width: 12px; height: 12px; }
+.hlist b { font-weight: 700; }
+.hlist .sub { color: var(--faint); font-size: .92rem; margin-top: 2px; }
+.hlist .bd { font-weight: 600; color: var(--board, var(--faint)); }
+.hlist .r { color: var(--faint); font-size: .9rem; white-space: nowrap; margin-top: 3px; text-align: right; line-height: 1.3; }
+.hlist .newtag { display: inline-block; background: var(--gold); color: var(--gold-ink); font-size: .74rem; font-weight: 700; padding: 1px 6px; border-radius: 3px; margin-left: 8px; vertical-align: 2px; }
+.hlist .speak { display: inline-block; background: var(--gold); color: var(--gold-ink); font-size: .78rem; font-weight: 700; padding: 1px 7px; border-radius: 3px; margin-left: 8px; vertical-align: 1px; }
+.hlist.up .hrow { grid-template-columns: 62px 1fr; }
+.hlist.up .when { font-weight: 700; line-height: 1.2; }
+.hlist.up .when small { display: block; font-weight: 400; color: var(--faint); font-size: .85rem; }
+.hlist.up .today .when { color: var(--board, var(--ink)); }
+.hlist.moving .hrow { grid-template-columns: 1fr; }
+.hlist .dots { display: inline-flex; gap: 4px; margin-right: 8px; vertical-align: 1px; }
+.hlist .dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--board, var(--none)); }
+.hlist .dots i.e { background: transparent; border: 1.5px dashed var(--board, var(--none)); }
+.hlist .more { display: block; padding: 10px 16px; font-size: .92rem; border-top: 1px solid var(--hair); }
+.tally { margin: 30px 0 0; color: var(--faint); font-size: .95rem; }
