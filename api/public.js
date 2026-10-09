@@ -10,6 +10,7 @@ export async function GET(request) {
     switch (q("view")) {
       case "home": out = await P.home(); break;
       case "meetings": out = await P.meetings(q("body")); break;
+      case "decisions": out = await P.decisions(q("body")); break;
       case "calendar": out = await P.calendar(); break;
       case "meeting": out = await P.meeting(q("id")); break;
       case "issues": out = await P.issuesList(); break;

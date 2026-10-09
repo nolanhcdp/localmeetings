@@ -130,7 +130,7 @@ function upcomingCard(u) {
 }
 
 function decidedList(m, items) {
-  return `<div class="list">${items.map((it) => { const r = resultOf(it); return `<a class="row" href="#/m/${esc(m.id)}#item-${it.idx}"><span class="mark ${r}"></span><span><b>${esc(it.title)}</b><div class="sub">${esc(stageText(it.stage))}${it.vote?.method && it.vote.method !== "none" ? ` · ${esc(it.vote.method)} vote` : ""}${it.issue ? ` · ${esc(it.issue.title || "")}` : ""}</div></span><span class="${it.amount ? "amt" : "sub"}">${it.amount ? money(it.amount) : esc(it.category === "land use" ? "Rezoning" : "")}</span></a>`; }).join("")}</div>`;
+  return `<div class="list">${items.map((it) => { const r = resultOf(it); return `<a class="row" href="#/m/${esc(m.id)}#item-${it.idx}"><span class="mark ${r}"></span><span><b>${esc(it.title)}</b><div class="sub">${esc(stageText(it.stage))}${it.vote?.method && it.vote.method !== "none" ? ` · ${esc(it.vote.method)} vote` : ""}${it.issue ? ` · ${esc(it.issue.title || "")}` : ""}</div></span><span class="${it.amount ? "amt" : "sub"}">${it.amount ? money(it.amount) : esc(it.category === "land use" ? "Land use" : "")}</span></a>`; }).join("")}</div>`;
 }
 
 const issueCard = (i, bodies) => {
@@ -206,11 +206,11 @@ async function pageHome() {
   view.innerHTML = `
     ${topBlock(d)}
     <div class="sechead"><h2>This week and next</h2><a href="#/calendar">Full calendar</a></div>
-    ${strip.length ? `<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(210px,1fr))">${strip.map(upcomingCard).join("")}</div>${legend()}` : `<p class="muted">Nothing else scheduled in the next two weeks.</p>`}
+    ${strip.length ? `<div class="strip">${strip.map(upcomingCard).join("")}</div>${legend()}` : `<p class="muted">Nothing else scheduled in the next two weeks.</p>`}
     ${d.ahead.length ? `<div class="sechead"><h2>Dates to watch</h2></div><div class="tablewrap"><table><tbody>${d.ahead.map((a) => `<tr><td style="white-space:nowrap"><b>${esc(dt(a.date, { weekday: "short", month: "short", day: "numeric" }))}</b></td><td><a href="#/i/${esc(a.key)}">${esc(a.title)}</a><div class="small muted">${esc(a.text)}</div></td><td>${a.publicCanSpeak ? `<span class="tag hearing">Public can speak</span>` : ""}</td></tr>`).join("")}</tbody></table></div>` : ""}
     <div class="two" style="margin-top:8px;gap:28px 32px;grid-template-columns:repeat(auto-fit,minmax(340px,1fr))">
       <div>
-        <div class="sechead"><h2>Latest decisions</h2><a href="#/meetings">All meetings</a>${recent ? `<span class="sub">${esc(recent.bodyName)}, ${esc(dt(recent.date, { month: "short", day: "numeric" }))} · ${recent.items.length} items, ${recent.items.filter((i) => i.result === "passed").length} passed</span>` : ""}</div>
+        <div class="sechead"><h2>Latest decisions</h2><a href="#/decisions">All decisions</a>${recent ? `<span class="sub">${esc(recent.bodyName)}, ${esc(dt(recent.date, { month: "short", day: "numeric" }))} · ${recent.items.length} items, ${recent.items.filter((i) => i.result === "passed").length} passed</span>` : ""}</div>
         ${recent ? decidedList(recent, decided) + `<div class="legend"><span><i class="swatch" style="background:var(--pass)"></i>Passed</span><span><i class="swatch" style="background:var(--fail)"></i>Failed</span><span><i class="swatch" style="background:var(--gold)"></i>Tabled</span><span><i class="swatch" style="background:var(--none)"></i>No vote</span></div>` : `<p class="muted">Nothing yet.</p>`}
       </div>
       <div>
@@ -265,6 +265,20 @@ async function pageCalendar(ym) {
     <p class="small muted" style="margin-top:10px">Solid color: on the board's calendar or agenda posted. Dashed: the board's usual date, not confirmed yet. Struck through: canceled. Times are local.</p>
     <div class="sechead"><h2>Next up</h2></div>
     <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(210px,1fr))">${coming.map(upcomingCard).join("") || `<p class="muted">Nothing scheduled.</p>`}</div>`;
+}
+
+// Decisions: the home page's "Latest decisions" list, for every meeting
+async function pageDecisions(body) {
+  setNav("decisions"); title("Decisions");
+  const d = await api(body ? { view: "decisions", body } : { view: "decisions" });
+  const groups = {};
+  for (const m of d.meetings) (groups[m.date.slice(0, 7)] ||= []).push(m);
+  const block = (m) => { const items = m.items.slice().sort((a, b) => a.idx - b.idx); const passed = items.filter((i) => i.result === "passed").length; return `
+    <div class="sechead dec"><h3><a href="#/m/${esc(m.id)}" class="${bcls(m.body)}">${esc(m.bodyName)}</a> <span class="sub">${esc(dt(m.date, { weekday: "short", month: "short", day: "numeric" }))} · ${items.length} item${items.length === 1 ? "" : "s"}${passed ? `, ${passed} passed` : ""}</span></h3></div>
+    ${decidedList(m, items)}`; };
+  view.innerHTML = `<h1>Decisions</h1><p class="muted">Every item that came before a board, newest first, with how it ended. Green passed, red failed, gold tabled, grey no vote.</p>
+    <div class="filters"><a class="chip ${body ? "" : "on"}" href="#/decisions">All boards</a>${Object.entries(d.bodies).map(([k, b]) => `<a class="chip ${body === k ? "on" : ""}" href="#/decisions/${k}">${esc(b.short)}</a>`).join("")}</div>
+    ${Object.entries(groups).map(([ym, ms]) => `<div class="sechead"><h2>${esc(new Date(ym + "-15T12:00").toLocaleDateString("en-US", { month: "long", year: "numeric" }))}</h2></div>${ms.map(block).join("")}`).join("") || `<p class="muted">Nothing yet.</p>`}`;
 }
 
 async function pageMeetings(body) {
@@ -781,6 +795,7 @@ async function route() {
   try {
     if (!parts.length) await pageHome();
     else if (parts[0] === "meetings") await pageMeetings(parts[1]);
+    else if (parts[0] === "decisions") await pageDecisions(parts[1]);
     else if (parts[0] === "m") await pageMeeting(parts[1]);
     else if (parts[0] === "calendar") await pageCalendar(parts[1]);
     else if (parts[0] === "issues") await pageIssues();
