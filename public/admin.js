@@ -897,36 +897,48 @@ function draftCard(d) {
   return el;
 }
 
-// The post image: mustard, the wordmark, one meaningful headline, up to four points, the URL
+// The post image. One board: that board's color from the site, white type. Several boards (or none): white, with each
+// point's dot in its board's color and a strip of every board's color across the top.
+const BOARD_COLOR = { council: "#0b7a6e", commissioners: "#8a5a00", plan: "#5b8a3c", "city-council": "#2b6cb0", "city-plan": "#6b4fbb", "city-bza": "#6b4fbb", "city-works": "#6b4fbb" };
 async function drawCard(cv, card) {
   try { await Promise.all(['700 80px "Fraunces"', 'italic 400 30px "Lora"', '400 30px "Inter"', '800 40px "Inter"'].map((f) => document.fonts.load(f))); } catch (e) {}
-  const x = cv.getContext("2d"), W = 1080, H = 1350, L = 88, R = W - 88, ink = "#1c1c1c";
-  x.fillStyle = "#ffd25a"; x.fillRect(0, 0, W, H); x.fillStyle = ink; x.textBaseline = "alphabetic";
+  const boards = (card.boards || []).filter((b) => BOARD_COLOR[b]);
+  const one = boards.length === 1 ? BOARD_COLOR[boards[0]] : null;
+  const bg = one || "#ffffff", ink = one ? "#ffffff" : "#1c1c1c", soft = one ? "rgba(255,255,255,.88)" : "#3a3a3a";
+  const x = cv.getContext("2d"), W = 1080, H = 1350, L = 88, R = W - 88;
+  x.fillStyle = bg; x.fillRect(0, 0, W, H); x.textBaseline = "alphabetic";
+  if (!one) { // a strip of each board's color (distinct colors only), or ink when no board is named
+    const cols = [...new Set(boards.map((b) => BOARD_COLOR[b]))]; const list = cols.length ? cols : ["#1c1c1c"];
+    list.forEach((c, i) => { x.fillStyle = c; x.fillRect((W / list.length) * i, 0, W / list.length + 1, 22); });
+  }
+  x.fillStyle = ink;
   const wrap = (text, font, width) => { x.font = font; const out = []; let line = ""; for (const w of String(text || "").split(/\s+/).filter(Boolean)) { const t = line ? line + " " + w : w; if (x.measureText(t).width > width && line) { out.push(line); line = w; } else line = t; } if (line) out.push(line); return out; };
-  x.font = '700 40px "Fraunces", Georgia, serif'; x.fillText("Second Reading", L, 112);
-  x.font = 'italic 400 32px "Lora", Georgia, serif'; x.textAlign = "right"; x.fillText(card.series || "", R, 112); x.textAlign = "left";
+  x.font = '700 40px "Fraunces", Georgia, serif'; x.fillText("Second Reading", L, 116);
+  x.font = 'italic 400 32px "Lora", Georgia, serif'; x.textAlign = "right"; x.fillText(card.series || "", R, 116); x.textAlign = "left";
   let size = 112, lines;
   do { lines = wrap(card.headline, `700 ${size}px "Fraunces", Georgia, serif`, R - L); size -= 6; } while ((lines.length > 3 || lines.some((l) => x.measureText(l).width > R - L)) && size > 60);
-  size += 6; let y = 150 + size;
+  size += 6; let y = 154 + size;
   x.font = `700 ${size}px "Fraunces", Georgia, serif`; for (const l of lines) { x.fillText(l, L, y); y += size * 0.98; }
-  if (card.sub) { y += 14; for (const l of wrap(card.sub, 'italic 400 36px "Lora", Georgia, serif', R - L)) { x.font = 'italic 400 36px "Lora", Georgia, serif'; x.fillText(l, L, y); y += 46; } }
+  if (card.sub) { y += 14; x.fillStyle = soft; for (const l of wrap(card.sub, 'italic 400 36px "Lora", Georgia, serif', R - L)) { x.font = 'italic 400 36px "Lora", Georgia, serif'; x.fillText(l, L, y); y += 46; } x.fillStyle = ink; }
   const pts = card.points || [], top = y + 40, bottom = H - 150;
   let ts = 32;
   const layout = (ts) => pts.map((p) => ({ p, body: wrap(p.text, `400 ${ts}px "Inter", sans-serif`, R - L - 120) })).map((o) => ({ ...o, h: ts * 1.35 + 14 + o.body.length * ts * 1.3 }));
-  let lay = layout(ts); const gap = () => Math.max(18, Math.min(44, (bottom - top - lay.reduce((a, o) => a + o.h, 0)) / Math.max(1, pts.length - 1)));
+  let lay = layout(ts);
   while (lay.reduce((a, o) => a + o.h, 0) + 18 * (pts.length - 1) > bottom - top && ts > 22) { ts -= 2; lay = layout(ts); }
-  y = top; const g = gap(), cx = L + 40;
-  if (pts.length > 1) { x.fillRect(cx - 2.5, top + 40, 5, lay.slice(0, -1).reduce((a, o) => a + o.h + g, 0)); }
+  const g = Math.max(18, Math.min(44, (bottom - top - lay.reduce((a, o) => a + o.h, 0)) / Math.max(1, pts.length - 1)));
+  y = top; const cx = L + 40;
+  if (pts.length > 1) { x.fillStyle = one ? "rgba(255,255,255,.7)" : "#d9d6cf"; x.fillRect(cx - 2.5, top + 40, 5, lay.slice(0, -1).reduce((a, o) => a + o.h + g, 0)); }
   lay.forEach((o, i) => {
-    x.beginPath(); x.arc(cx, y + 40, 40, 0, Math.PI * 2); x.fill();
-    x.fillStyle = "#ffd25a"; x.font = '800 36px "Inter", sans-serif'; x.textAlign = "center"; x.fillText(String(i + 1), cx, y + 53); x.textAlign = "left"; x.fillStyle = ink;
-    x.font = `800 ${Math.round(ts * 1.3)}px "Inter", sans-serif`; x.fillText(o.p.label, L + 120, y + ts * 1.15);
-    let by = y + ts * 1.35 + 14 + ts; x.font = `400 ${ts}px "Inter", sans-serif`; x.fillStyle = "#2a2a2a";
-    for (const l of o.body) { x.fillText(l, L + 120, by); by += ts * 1.3; } x.fillStyle = ink;
+    const dot = one ? "#ffffff" : BOARD_COLOR[o.p.board] || "#1c1c1c";
+    x.fillStyle = dot; x.beginPath(); x.arc(cx, y + 40, 40, 0, Math.PI * 2); x.fill();
+    x.fillStyle = one ? one : "#ffffff"; x.font = '800 36px "Inter", sans-serif'; x.textAlign = "center"; x.fillText(String(i + 1), cx, y + 53); x.textAlign = "left";
+    x.fillStyle = ink; x.font = `800 ${Math.round(ts * 1.3)}px "Inter", sans-serif`; x.fillText(o.p.label, L + 120, y + ts * 1.15);
+    let by = y + ts * 1.35 + 14 + ts; x.font = `400 ${ts}px "Inter", sans-serif`; x.fillStyle = soft;
+    for (const l of o.body) { x.fillText(l, L + 120, by); by += ts * 1.3; }
     y += o.h + g;
   });
-  x.font = '800 44px "Inter", sans-serif'; x.fillText("SecondReading.org", L, H - 62);
-  x.font = 'italic 400 28px "Lora", Georgia, serif'; x.textAlign = "right"; x.fillText("Kokomo and Howard County", R, H - 64); x.textAlign = "left";
+  x.fillStyle = ink; x.font = '800 44px "Inter", sans-serif'; x.fillText("SecondReading.org", L, H - 62);
+  x.fillStyle = soft; x.font = 'italic 400 28px "Lora", Georgia, serif'; x.textAlign = "right"; x.fillText("Kokomo and Howard County", R, H - 64); x.textAlign = "left";
 }
 
 function styleForm() {
