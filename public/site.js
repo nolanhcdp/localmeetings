@@ -709,9 +709,10 @@ function prefsForm(p) {
 }
 function installSteps() {
   const inApp = inAppBrowser();
+  const chrome = /CriOS/.test(navigator.userAgent);
   return `<ol class="steps-list">
-    ${inApp ? `<li><b>Open this page in Safari.</b> You're inside another app right now. Tap the <b>···</b> menu and choose <b>Open in Safari</b> (or Open in browser).</li>` : `<li><b>Open this page in Safari</b> if you aren't already.</li>`}
-    <li>Tap the <b>Share</b> button (the square with an arrow pointing up).</li>
+    ${inApp ? `<li><b>Open this page in Safari or Chrome.</b> You're inside another app right now. Tap the <b>···</b> menu and choose <b>Open in browser</b>.</li>` : ""}
+    <li>Tap the <b>Share</b> button${chrome ? ` (in Chrome, at the right end of the address bar)` : ` (the square with an arrow pointing up; on newer iPhones, tap <b>···</b> first)`}.</li>
     <li>Scroll down and tap <b>Add to Home Screen</b>, then <b>Add</b>.</li>
     <li>Open <b>Second Reading</b> from your home screen and tap <b>Turn on alerts</b>.</li>
   </ol>`;

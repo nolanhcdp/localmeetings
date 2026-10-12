@@ -42,6 +42,7 @@ async function route() {
     if (h.startsWith("/ref/")) return await viewRef(decodeURIComponent(h.slice(5)));
     if (h === "/settings") return await viewSettings();
     if (h === "/archive") return await viewArchive();
+    if (h === "/posts") return await viewPosts();
     if (h === "/queue") return await viewQueue();
     if (h.startsWith("/research")) return await viewResearch(h.split("/")[2] || "flags");
     return await viewMeetings();
@@ -492,6 +493,7 @@ async function viewQueue() {
   $("#view").innerHTML = `
     <h1>Needs you</h1>
     <p class="muted">Everything else publishes on its own. These items are held off the public site until you decide, and reports come from the "Report an error" link.</p>
+    ${items.some((i) => /resident|address|private|personal|phone|email/i.test(i.reason || "")) ? `<div class="card"><p style="margin:0 0 8px">Some of these are held only because a resident gave a name or address. Residents' details are now removed automatically, so those can go public.</p><p class="actions" style="margin:0"><button id="relPriv" class="primary" title="Removes residents' addresses, phone numbers and emails, then publishes items held only for that. No Claude, no cost.">Clean and publish those</button> <span id="relOut" class="muted"></span></p></div>` : ""}
     ${reports.length ? `<h2>Error reports (${reports.length})</h2>${reports.map((r) => `<div class="card item">
       <div class="head"><h3>${r.meetingId ? `<a href="#/m/${encodeURIComponent(r.meetingId)}">${esc(r.meetingId)}</a>${r.idx != null ? ` · item ${r.idx + 1}` : ""}` : `Page: ${esc(r.page || "")}`}</h3><span class="meta">${new Date(r.at).toLocaleString()}</span></div>
       <p>${esc(r.text)}</p>${r.contact ? `<p class="meta">Reply to: ${esc(r.contact)}</p>` : ""}
@@ -518,6 +520,11 @@ reply: ${b.diag.toolUses ?? "?"} tool call(s) · stop: ${esc(b.diag.stop || "?")
           ${it.videoId && it.videoSeconds != null ? `<a class="btn" href="https://www.youtube.com/watch?v=${esc(it.videoId)}&t=${it.videoSeconds}s" target="_blank" rel="noopener">Watch ▶ ${clock(it.videoSeconds)}</a>` : ""}
         </div></div>`;
     }).join("") : `<p class="muted">Nothing held. Everything is live.</p>`}`;
+  if ($("#relPriv")) $("#relPriv").onclick = async () => {
+    $("#relPriv").disabled = true; $("#relOut").textContent = "Working…";
+    try { const r = await api("releasePrivacyHolds"); toast(`Published ${r.released.length} item${r.released.length === 1 ? "" : "s"} with residents' details removed. ${r.kept} still need you.`, 8000); await viewQueue(); }
+    catch (e) { $("#relOut").textContent = e.message; $("#relPriv").disabled = false; }
+  };
   $("#redraftAll")?.addEventListener("click", async () => {
     if (!confirm(`Redraft ${broken.length} meetings now? About $${(broken.length * 0.25).toFixed(2)} in API use.`)) return;
     const p = $("#progress"); document.querySelectorAll("#view button").forEach((b) => (b.disabled = true));
@@ -811,3 +818,152 @@ function bookmarklet(origin) {
 }
 
 route();
+
+// ---------- Posts: Facebook drafts from the public record
+let PO = null; // posts overview cache
+const PCOST = "about 1–2¢";
+async function viewPosts() {
+  PO = await api("posts");
+  const v = $("#view");
+  const sug = PO.suggestions;
+  const typeOpts = Object.entries(PO.types).map(([k, t]) => `<option value="${k}">${esc(t.label)}</option>`).join("");
+  v.innerHTML = `<h1>Posts</h1>
+    <p class="muted">Suggestions are free. Drafting or changing a post costs ${PCOST}. Drafts only use what's public on the site.</p>
+    <h2>Worth posting now</h2>
+    <div class="card posts-sug">${sug.length ? sug.map((s, i) => `<div class="ps-row">
+      <div><span class="lbl">${esc(s.label)}</span> <b>${esc(s.title)}</b><div class="meta">${esc(s.why)}</div></div>
+      <div class="actions">${s.posted ? `<span class="yes">Posted</span>` : ""}${s.drafted ? `<button data-see="d-${esc(s.key.replace(/[^\w-]/g, "_"))}">See draft</button>` : `<button class="primary" data-sug="${i}">Draft</button>`}</div></div>`).join("") : `<p class="muted">Nothing new right now.</p>`}</div>
+    <h2>Draft a post</h2>
+    <div class="card"><div class="row">
+      <div><label>Type</label><select id="pType">${typeOpts}</select></div>
+      <div class="grow"><label>About</label><select id="pRef"></select></div>
+      <div style="flex:0 0 auto"><button class="primary" id="pGo">Draft (${PCOST})</button></div>
+    </div></div>
+    <h2>Drafts</h2>
+    <div id="pDrafts">${PO.drafts.length ? "" : `<p class="muted">No drafts yet.</p>`}</div>
+    <h2>Style</h2>
+    <div class="card" id="pStyle"></div>
+    <h2>Posted</h2>
+    <div class="card">${PO.log.length ? PO.log.map((l) => `<div class="ps-row"><div><span class="lbl">${esc(PO.types[l.type]?.label || l.type)}</span> ${esc(fmtDate(l.at.slice(0, 10)))}<div class="meta">${esc(l.text)}</div></div><div><button class="linkish" data-unpost="${esc(l.key)}">Undo</button></div></div>`).join("") : `<p class="muted">Nothing marked as posted yet.</p>`}</div>`;
+
+  const refsFor = (type) => type === "headsup" ? PO.targets.upcoming : type === "second" ? PO.targets.issues : type === "numbers" ? PO.targets.amounts : type === "explain" ? PO.targets.kinds : [{ ref: new Date(Date.now() - 4 * 3600e3).toISOString().slice(0, 10), label: type === "week" ? "The next seven days" : "The past seven days" }];
+  const fillRefs = () => { const list = refsFor($("#pType").value); $("#pRef").innerHTML = list.length ? list.map((r) => `<option value="${esc(r.ref)}">${esc(r.label)}</option>`).join("") : `<option value="">Nothing to pick</option>`; };
+  $("#pType").onchange = fillRefs; fillRefs();
+  $("#pGo").onclick = async (e) => { const ref = $("#pRef").value; if (!ref) return toast("Nothing to draft for that type yet."); await runDraft(e.target, { type: $("#pType").value, ref }); };
+  v.querySelectorAll("[data-sug]").forEach((b) => b.onclick = async () => { const s = sug[+b.dataset.sug]; await runDraft(b, { type: s.type, ref: s.ref, key: s.key }); });
+  v.querySelectorAll("[data-see]").forEach((b) => b.onclick = () => document.getElementById(b.dataset.see)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  v.querySelectorAll("[data-unpost]").forEach((b) => b.onclick = async () => { await api("postMark", { key: b.dataset.unpost, on: false }); viewPosts(); });
+
+  const box = $("#pDrafts");
+  PO.drafts.forEach((d) => box.append(draftCard(d)));
+  styleForm();
+  if (location.hash === "#/posts" && sessionStorage.getItem("posts-jump")) { const id = sessionStorage.getItem("posts-jump"); sessionStorage.removeItem("posts-jump"); document.getElementById(id)?.scrollIntoView({ block: "start" }); }
+}
+
+async function runDraft(btn, body) {
+  const old = btn.textContent; btn.disabled = true; btn.textContent = "Writing…";
+  try { const { draft } = await api("postDraft", body); toast(`Drafted (${draft.cents}¢).`); sessionStorage.setItem("posts-jump", "d-" + draft.key.replace(/[^\w-]/g, "_")); await viewPosts(); }
+  catch (e) { btn.disabled = false; btn.textContent = old; toast(e.message, 6000); }
+}
+
+function draftCard(d) {
+  const el = document.createElement("div");
+  el.className = "card pdraft"; el.id = "d-" + d.key.replace(/[^\w-]/g, "_");
+  const posted = PO.log.some((l) => l.key === d.key);
+  el.innerHTML = `<div class="pd-head"><div><span class="lbl">${esc(d.label)}</span> <span class="meta">${esc(new Date(d.at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }))} · ${d.cents}¢${d.tweak ? ` · changed: ${esc(d.tweak)}` : ""}</span></div>${posted ? `<span class="yes">Posted</span>` : ""}</div>
+    ${d.checks?.length ? `<div class="check"><b>Check before posting:</b><ul>${d.checks.map((c) => `<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}
+    <div class="pd-body">
+      <div class="pd-text"><textarea rows="14">${esc(d.text)}</textarea>
+        <div class="meta pd-count"></div>
+        <div class="actions"><button class="primary" data-a="copy">Copy</button>
+          <button data-t="Make it shorter">Shorter</button><button data-t="Make it a bit longer, with one more useful detail from the facts">Longer</button><button data-t="Simpler words, shorter sentences">Simpler</button><button data-t="Write a fresh version">Redo</button></div>
+        <div class="row" style="margin-top:.5rem"><div class="grow"><input placeholder="Change just this post, e.g. lead with the jail" data-own></div><div style="flex:0 0 auto"><button data-a="own">Change (${PCOST})</button></div></div>
+        <div class="actions" style="margin-top:.6rem"><button data-a="posted">${posted ? "Mark not posted" : "Mark posted"}</button><button class="danger" data-a="del">Delete</button></div>
+      </div>
+      <div class="pd-img"><canvas width="1080" height="1350"></canvas><div class="actions"><button data-a="png">Download image</button></div></div>
+    </div>`;
+  const ta = $("textarea", el), cnt = $(".pd-count", el);
+  const count = () => { const w = ta.value.trim().split(/\s+/).filter(Boolean).length; cnt.textContent = `${w} words · ${ta.value.length} characters`; };
+  ta.oninput = count; count();
+  const canvas = $("canvas", el);
+  drawCard(canvas, d.card);
+  const tweak = async (btn, t) => { const old = btn.textContent; btn.disabled = true; btn.textContent = "Writing…"; try { const { draft } = await api("postDraft", { type: d.type, ref: d.ref, key: d.key, tweak: t, current: ta.value }); toast(`Changed (${draft.cents}¢).`); sessionStorage.setItem("posts-jump", el.id); await viewPosts(); } catch (e) { btn.disabled = false; btn.textContent = old; toast(e.message, 6000); } };
+  el.querySelectorAll("[data-t]").forEach((b) => b.onclick = () => tweak(b, b.dataset.t));
+  el.querySelector('[data-a="own"]').onclick = (e) => { const t = $("[data-own]", el).value.trim(); if (!t) return toast("Say what to change."); tweak(e.target, t); };
+  el.querySelector('[data-a="copy"]').onclick = async () => { try { await navigator.clipboard.writeText(ta.value); toast("Copied. Paste it into Facebook."); } catch (e) { ta.select(); document.execCommand("copy"); toast("Copied."); } };
+  el.querySelector('[data-a="posted"]').onclick = async () => { await api("postMark", { key: d.key, on: !posted }); sessionStorage.setItem("posts-jump", el.id); viewPosts(); };
+  el.querySelector('[data-a="del"]').onclick = async () => { if (!confirm("Delete this draft?")) return; await api("postDelete", { key: d.key }); viewPosts(); };
+  el.querySelector('[data-a="png"]').onclick = () => { const a = document.createElement("a"); a.download = `second-reading-${d.key.replace(/[^\w-]+/g, "-")}.png`; a.href = canvas.toDataURL("image/png"); a.click(); };
+  return el;
+}
+
+// The post image: mustard, the wordmark, one meaningful headline, up to four points, the URL
+async function drawCard(cv, card) {
+  try { await Promise.all(['700 80px "Fraunces"', 'italic 400 30px "Lora"', '400 30px "Inter"', '800 40px "Inter"'].map((f) => document.fonts.load(f))); } catch (e) {}
+  const x = cv.getContext("2d"), W = 1080, H = 1350, L = 88, R = W - 88, ink = "#1c1c1c";
+  x.fillStyle = "#ffd25a"; x.fillRect(0, 0, W, H); x.fillStyle = ink; x.textBaseline = "alphabetic";
+  const wrap = (text, font, width) => { x.font = font; const out = []; let line = ""; for (const w of String(text || "").split(/\s+/).filter(Boolean)) { const t = line ? line + " " + w : w; if (x.measureText(t).width > width && line) { out.push(line); line = w; } else line = t; } if (line) out.push(line); return out; };
+  x.font = '700 40px "Fraunces", Georgia, serif'; x.fillText("Second Reading", L, 112);
+  x.font = 'italic 400 32px "Lora", Georgia, serif'; x.textAlign = "right"; x.fillText(card.series || "", R, 112); x.textAlign = "left";
+  let size = 112, lines;
+  do { lines = wrap(card.headline, `700 ${size}px "Fraunces", Georgia, serif`, R - L); size -= 6; } while ((lines.length > 3 || lines.some((l) => x.measureText(l).width > R - L)) && size > 60);
+  size += 6; let y = 150 + size;
+  x.font = `700 ${size}px "Fraunces", Georgia, serif`; for (const l of lines) { x.fillText(l, L, y); y += size * 0.98; }
+  if (card.sub) { y += 14; for (const l of wrap(card.sub, 'italic 400 36px "Lora", Georgia, serif', R - L)) { x.font = 'italic 400 36px "Lora", Georgia, serif'; x.fillText(l, L, y); y += 46; } }
+  const pts = card.points || [], top = y + 40, bottom = H - 150;
+  let ts = 32;
+  const layout = (ts) => pts.map((p) => ({ p, body: wrap(p.text, `400 ${ts}px "Inter", sans-serif`, R - L - 120) })).map((o) => ({ ...o, h: ts * 1.35 + 14 + o.body.length * ts * 1.3 }));
+  let lay = layout(ts); const gap = () => Math.max(18, Math.min(44, (bottom - top - lay.reduce((a, o) => a + o.h, 0)) / Math.max(1, pts.length - 1)));
+  while (lay.reduce((a, o) => a + o.h, 0) + 18 * (pts.length - 1) > bottom - top && ts > 22) { ts -= 2; lay = layout(ts); }
+  y = top; const g = gap(), cx = L + 40;
+  if (pts.length > 1) { x.fillRect(cx - 2.5, top + 40, 5, lay.slice(0, -1).reduce((a, o) => a + o.h + g, 0)); }
+  lay.forEach((o, i) => {
+    x.beginPath(); x.arc(cx, y + 40, 40, 0, Math.PI * 2); x.fill();
+    x.fillStyle = "#ffd25a"; x.font = '800 36px "Inter", sans-serif'; x.textAlign = "center"; x.fillText(String(i + 1), cx, y + 53); x.textAlign = "left"; x.fillStyle = ink;
+    x.font = `800 ${Math.round(ts * 1.3)}px "Inter", sans-serif`; x.fillText(o.p.label, L + 120, y + ts * 1.15);
+    let by = y + ts * 1.35 + 14 + ts; x.font = `400 ${ts}px "Inter", sans-serif`; x.fillStyle = "#2a2a2a";
+    for (const l of o.body) { x.fillText(l, L + 120, by); by += ts * 1.3; } x.fillStyle = ink;
+    y += o.h + g;
+  });
+  x.font = '800 44px "Inter", sans-serif'; x.fillText("SecondReading.org", L, H - 62);
+  x.font = 'italic 400 28px "Lora", Georgia, serif'; x.textAlign = "right"; x.fillText("Kokomo and Howard County", R, H - 64); x.textAlign = "left";
+}
+
+function styleForm() {
+  const s = PO.style, el = $("#pStyle");
+  const sel = (id, val, opts) => `<select id="${id}">${opts.map(([v, l]) => `<option value="${v}" ${v === val ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
+  el.innerHTML = `<div class="grid">
+    <div><label>Voice</label>${Object.entries(PO.voices).map(([k, t]) => `<label class="radio"><input type="radio" name="voice" value="${k}" ${s.voice === k ? "checked" : ""}> <b>${k}</b> ${esc(t)}</label>`).join("")}</div>
+    <div class="row">
+      <div><label>First line</label>${sel("sFirst", s.firstLine, [["news", "The news itself"], ["date", "Day and board first"]])}</div>
+      <div><label>Item lead-ins</label>${sel("sLead", s.leadIns, [["labels", "Labels (“The rezoning: …”)"], ["sentences", "Full sentences"]])}</div>
+      <div><label>Emoji</label>${sel("sEmoji", s.emoji, [["none", "None"], ["one", "One per item"]])}</div>
+    </div>
+    <div class="row">
+      <label class="radio"><input type="checkbox" id="sWho" ${s.whoDecides ? "checked" : ""}> “Who decides:” line</label>
+      <label class="radio"><input type="checkbox" id="sFine" ${s.finePrint ? "checked" : ""}> “Fine print:” line when there's a telling detail</label>
+    </div>
+    <div class="row">
+      <div class="grow"><label>Before the link (blank for just the link)</label><input id="sLinkLead" value="${esc(s.linkLead)}" placeholder="Every item, in plain language:"></div>
+      <div class="grow"><label>Sign-off (blank for none)</label><input id="sSign" value="${esc(s.signoff)}" placeholder="So every vote has a witness."></div>
+    </div>
+    <div><label>Never use these words (comma-separated)</label><textarea id="sBanned" rows="2">${esc((s.banned || []).join(", "))}</textarea></div>
+    <div><label>Length in words</label><div class="row">${Object.entries(PO.types).map(([k, t]) => `<div><label>${esc(t.label)}</label><div class="lenpair"><input type="number" data-wlo="${k}" value="${s.words?.[k]?.[0] ?? t.words[0]}"> to <input type="number" data-whi="${k}" value="${s.words?.[k]?.[1] ?? t.words[1]}"></div></div>`).join("")}</div></div>
+    <div><label>Voice notes (added to every draft)</label><textarea id="sNotes" rows="3" placeholder="e.g. Say Kokomo, not the City of Kokomo.">${esc(s.notes)}</textarea></div>
+    <div class="actions"><button id="sTry">Try it (${PCOST})</button><button class="primary" id="sSave">Save</button><button id="sReset">Reset to defaults</button></div>
+    <div id="sTryOut"></div></div>`;
+  const read = () => ({
+    voice: el.querySelector('input[name="voice"]:checked')?.value || "C", firstLine: $("#sFirst").value, leadIns: $("#sLead").value, emoji: $("#sEmoji").value,
+    whoDecides: $("#sWho").checked, finePrint: $("#sFine").checked, linkLead: $("#sLinkLead").value.trim(), signoff: $("#sSign").value.trim(),
+    banned: $("#sBanned").value.split(",").map((w) => w.trim()).filter(Boolean), notes: $("#sNotes").value.trim(),
+    words: Object.fromEntries(Object.keys(PO.types).map((k) => [k, [+el.querySelector(`[data-wlo="${k}"]`).value, +el.querySelector(`[data-whi="${k}"]`).value]])),
+  });
+  $("#sSave").onclick = async () => { PO.style = (await api("postStyle", { style: read() })).style; toast("Style saved. New drafts will use it."); };
+  $("#sReset").onclick = async () => { if (!confirm("Put back the default style?")) return; PO.style = (await api("postStyle", { style: PO.defaults })).style; styleForm(); toast("Defaults restored."); };
+  $("#sTry").onclick = async (e) => {
+    const b = e.target; b.disabled = true; b.textContent = "Writing…";
+    try { const { draft } = await api("postTry", { style: read() }); $("#sTryOut").innerHTML = `<p class="meta">A real ${esc(draft.label)} post with these settings (not saved, ${draft.cents}¢):</p><pre class="pd-try">${esc(draft.text)}</pre>`; }
+    catch (err) { toast(err.message, 6000); }
+    b.disabled = false; b.textContent = `Try it (${PCOST})`;
+  };
+}

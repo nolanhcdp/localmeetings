@@ -1,6 +1,6 @@
 // Everything the review screen needs, behind ADMIN_CODE.
 import { listMeetings, getMeeting, saveMeeting, listVideos, getVideo, listIssues, saveIssue, getJSON, setJSON, listRefs, getRef, redis, getMany } from "../lib/store.js";
-import { approve, unapprove, assignVideo, scanPackets, getRoster, readyToDraft, normalizeRecord, importFiles, rebuildAllIssues, rebuildIssuesFor, resolveItem, exportForChat, scanArchive, matchArchiveVideos, archiveOverview, needsCheck, needsPreview, needsEnrich } from "../lib/pipeline.js";
+import { approve, unapprove, assignVideo, scanPackets, getRoster, readyToDraft, normalizeRecord, importFiles, rebuildAllIssues, rebuildIssuesFor, resolveItem, releasePrivacyHolds, exportForChat, scanArchive, matchArchiveVideos, archiveOverview, needsCheck, needsPreview, needsEnrich } from "../lib/pipeline.js";
 import { itemLabel, recordOf } from "../lib/publish.js";
 import { insights } from "../lib/insights.js";
 import { listMembers, createMember, updateMember, askConfig, askLog, spendStatus, ADMIN_MEMBER } from "../lib/ask.js";
@@ -10,6 +10,7 @@ import { classifyIssue, KINDS } from "../lib/roadmaps.js";
 import { videoInventory } from "../lib/live.js";
 import { CHANNELS } from "../lib/county.js";
 import { json, fail, isAdmin } from "../lib/http.js";
+import { postsOverview, draftPost, markPosted, deleteDraft, saveStyle, tryStyle } from "../lib/posts.js";
 export const config = { maxDuration: 60 };
 
 const slim = (m) => { normalizeRecord(m.draft); normalizeRecord(m.record); return {
@@ -87,6 +88,7 @@ export async function POST(request) {
         await saveIssue(i); return json({ kind: classifyIssue(i) });
       }
       case "import": return json({ ok: true, done: await importFiles(p.files || []) });
+      case "releasePrivacyHolds": return json(await releasePrivacyHolds());
       case "refs": return json({ refs: (await listRefs()).map(({ funds, generalFundDepartments, otherPropertyTaxDepartments, ...r }) => r) });
       case "ref": return json({ ref: await getRef(p.id) });
       case "queue": { // held items across every meeting
@@ -149,6 +151,12 @@ export async function POST(request) {
         return json(await broadcast({ title, body, url, tag: "custom-" + Date.now().toString(36) }));
       }
       case "askConfig": { const cfg = { monthlyCents: Math.max(0, Math.round(+p.monthlyCents || 0)), dailyCents: Math.max(0, Math.round(+p.dailyCents || 0)) }; await setJSON("config:ask", cfg); return json({ config: cfg }); }
+      case "posts": return json(await postsOverview());
+      case "postDraft": return json({ draft: await draftPost({ type: p.type, ref: p.ref, key: p.key, tweak: String(p.tweak || "").slice(0, 400), current: String(p.current || "").slice(0, 6000) }) });
+      case "postMark": return json(await markPosted(p.key, p.on !== false));
+      case "postDelete": return json(await deleteDraft(p.key));
+      case "postStyle": return json({ style: await saveStyle(p.style || {}) });
+      case "postTry": return json({ draft: await tryStyle(p.style || {}) });
       default: return fail("Unknown action");
     }
   } catch (e) { return fail(e, 500); }
