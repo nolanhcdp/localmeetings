@@ -920,7 +920,7 @@ async function drawCard(cv, card) {
   text("SecondReading.org", '800 44px "Inter", sans-serif', C.ink, L, H - 62);
   text("Kokomo and Howard County", 'italic 400 28px "Lora", Georgia, serif', C.soft, R, H - 64, "right");
   const header = (maxSize = 112) => {
-    const h = fit(card.headline, 700, '"Fraunces", Georgia, serif', maxSize, 60, R - L, 3);
+    const h = fit(card.headline, 700, '"Fraunces", Georgia, serif', maxSize, 56, R - L, (card.items?.length || card.rows?.length || card.steps?.length || 0) >= 4 ? 2 : 3);
     let y = 158 + h.size; for (const l of h.lines) { text(l, `700 ${h.size}px "Fraunces", Georgia, serif`, C.ink, L, y); y += h.size * 0.98; }
     if (card.sub) { y += 10; for (const l of wrap(card.sub, 'italic 400 36px "Lora", Georgia, serif', R - L)) { text(l, 'italic 400 36px "Lora", Georgia, serif', C.soft, L, y); y += 46; } }
     return y + 30;
@@ -928,14 +928,25 @@ async function drawCard(cv, card) {
   const layout = card.layout || "items";
 
   if (layout === "number") {
-    let y = 170;
-    const f = fit(card.figure || card.headline, 700, '"Fraunces", Georgia, serif', 230, 90, R - L, 2);
-    y += f.size * 0.9; for (const l of f.lines) { text(l, `700 ${f.size}px "Fraunces", Georgia, serif`, C.ink, L, y); y += f.size; }
-    y += 10; const h = fit(card.figure ? card.headline : "", 700, '"Fraunces", Georgia, serif', 72, 44, R - L, 3);
-    for (const l of h.lines) { text(l, `700 ${h.size}px "Fraunces", Georgia, serif`, C.ink, L, y + h.size * 0.4); y += h.size * 1.05; }
-    if (card.sub) { y += 24; for (const l of wrap(card.sub, 'italic 400 38px "Lora", Georgia, serif', R - L)) { text(l, 'italic 400 38px "Lora", Georgia, serif', C.soft, L, y); y += 50; } }
-    y += 40; x.fillStyle = C.rule; x.fillRect(L, y, R - L, 3); y += 70;
-    for (const c of card.context || []) { for (const l of wrap(c, '400 38px "Inter", sans-serif', R - L)) { text(l, '400 38px "Inter", sans-serif', C.ink, L, y); y += 52; } y += 22; }
+    // Plan every line, then shrink everything together until it fits between the header and the footer
+    const plan = (k) => {
+      const out = []; let y = 170;
+      const fig = fit(card.figure || card.headline, 700, '"Fraunces", Georgia, serif', Math.round(220 * k), 70, R - L, 1);
+      const figLines = fig.lines.length === 1 && x.measureText(fig.lines[0]).width <= R - L ? fig : fit(card.figure || card.headline, 700, '"Fraunces", Georgia, serif', Math.round(170 * k), 60, R - L, 2);
+      for (const l of figLines.lines) { y += figLines.size * 0.92; out.push([l, `700 ${figLines.size}px "Fraunces", Georgia, serif`, C.ink, y]); y += figLines.size * 0.12; }
+      if (card.figure && card.headline) { const hs = Math.round(68 * k); y += 34 * k; for (const l of wrap(card.headline, `700 ${hs}px "Fraunces", Georgia, serif`, R - L)) { y += hs; out.push([l, `700 ${hs}px "Fraunces", Georgia, serif`, C.ink, y]); y += hs * 0.08; } }
+      if (card.sub) { const ss = Math.round(38 * k); y += 18 * k; for (const l of wrap(card.sub, `italic 400 ${ss}px "Lora", Georgia, serif`, R - L)) { y += ss * 1.3; out.push([l, `italic 400 ${ss}px "Lora", Georgia, serif`, C.soft, y]); } }
+      let rule = null; const ctxStart = out.length;
+      if ((card.context || []).length) { y += 44 * k; rule = y; y += 20 * k; const cs = Math.round(38 * k); for (const c of card.context) { y += 18 * k; for (const l of wrap(c, `400 ${cs}px "Inter", sans-serif`, R - L)) { y += cs * 1.32; out.push([l, `400 ${cs}px "Inter", sans-serif`, C.ink, y]); } } }
+      // Spare room goes above the context, so it sits just over the footer instead of leaving a hole at the bottom
+      const spare = BOTTOM - 40 - y;
+      if (rule != null && spare > 0) { rule += spare; for (let i = ctxStart; i < out.length; i++) out[i][3] += spare; }
+      return { out, rule, end: y };
+    };
+    let k = 1, pl = plan(k);
+    while (pl.end > BOTTOM - 20 && k > 0.55) { k -= 0.05; pl = plan(k); }
+    if (pl.rule) { x.fillStyle = C.rule; x.fillRect(L, pl.rule, R - L, 3); }
+    for (const [t, f, c, y] of pl.out) text(t, f, c, L, y);
     return;
   }
 
@@ -984,7 +995,8 @@ async function drawCard(cv, card) {
     .map((o) => ({ ...o, h: ts * 1.25 + 14 + o.body.length * ts * 1.3 + (o.it.tag || o.note.length ? 20 + Math.max(42, o.note.length * ts * 1.25) : 0) }));
   let m = measure(ts);
   const total = (m) => m.reduce((a, o) => a + o.h, 0) + 56 * (m.length - 1);
-  while (total(m) > BOTTOM - top && ts > 22) { ts -= 2; m = measure(ts); }
+  while (total(m) > BOTTOM - top && ts > 24) { ts -= 2; m = measure(ts); }
+  while (m.length > 1 && total(m) > BOTTOM - top) m = m.slice(0, -1); // never run into the footer: drop the least important item
   const gap = Math.min(80, Math.max(40, (BOTTOM - top - m.reduce((a, o) => a + o.h, 0)) / Math.max(1, m.length - 1) / 1.6));
   let y = top;
   m.forEach((o, i) => {
