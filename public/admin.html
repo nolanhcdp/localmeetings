@@ -8,26 +8,33 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700&family=Inter:wght@400;600;700;800&family=Lora:ital,wght@1,400;1,500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&family=Lora:ital,wght@1,400;1,500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/admin.css">
 </head>
 <body>
-<header class="top">
+<aside class="snav" id="snav">
   <a class="brand" href="#/">Second Reading</a>
   <nav>
-    <a href="#/queue">Needs you</a>
-    <a href="#/">Meetings</a>
-    <a href="#/research">Research</a>
-    <a href="#/posts">Posts</a>
-    <a href="#/videos">Unsorted videos</a>
-    <a href="#/issues">Issues</a>
-    <a href="#/library">Library</a>
-    <a href="#/archive">Past years</a>
-    <a href="#/settings">Settings</a>
-    <a href="/ask.html" target="_blank" rel="noopener">Ask ↗</a>
-    <a href="/" target="_blank" rel="noopener">Public site ↗</a>
+    <a href="#/" data-nav="today">Today</a>
+    <div class="grp">Review</div>
+    <a href="#/queue" data-nav="queue">Needs you <span class="n" data-count="queue"></span></a>
+    <a href="#/meetings" data-nav="meetings">Meetings</a>
+    <a href="#/archive" data-nav="archive">Past years</a>
+    <div class="grp">Publish</div>
+    <a href="#/posts" data-nav="posts">Posts <span class="n soft" data-count="posts"></span></a>
+    <a href="#/alerts" data-nav="alerts">Alerts</a>
+    <div class="grp">Look into</div>
+    <a href="#/issues" data-nav="issues">Issues</a>
+    <a href="#/research" data-nav="research">Research</a>
+    <a href="#/library" data-nav="library">Library</a>
+    <div class="grp">Setup</div>
+    <a href="#/members" data-nav="members">Board members</a>
+    <a href="#/ask" data-nav="ask">Ask and spending</a>
+    <a href="#/tools" data-nav="tools">Tools</a>
   </nav>
-</header>
+  <div class="snav-foot"><a href="/" target="_blank" rel="noopener">Public site ↗</a><a href="/ask.html" target="_blank" rel="noopener">Ask ↗</a></div>
+</aside>
+<header class="mbar"><button id="menuBtn" aria-label="Menu" aria-expanded="false">☰</button><a class="brand" href="#/">Second Reading</a></header>
 
 <main id="app">
   <section id="login" class="card narrow" hidden>

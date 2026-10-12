@@ -30,23 +30,77 @@ $("#loginForm").addEventListener("submit", (e) => { e.preventDefault(); CODE = $
 
 // ---------- Router
 window.addEventListener("hashchange", route);
+let ROUTE_N = 0;
+const NAV_OF = (h) => h === "/" ? "today" : h.startsWith("/m/") || h === "/meetings" || h === "/videos" ? "meetings" : h.startsWith("/ref/") ? "library" : h.split("/")[1];
 async function route() {
   if (!CODE) return showLogin();
   const h = location.hash.slice(1) || "/";
-  document.querySelectorAll(".top nav a").forEach((a) => a.classList.toggle("on", a.getAttribute("href") === "#" + h || (h.startsWith("/m/") && a.getAttribute("href") === "#/") || (h.startsWith("/ref/") && a.getAttribute("href") === "#/library") || (h.startsWith("/research") && a.getAttribute("href") === "#/research")));
+  const n = ++ROUTE_N;
+  const nav = NAV_OF(h);
+  document.querySelectorAll(".snav nav a").forEach((a) => a.classList.toggle("on", a.dataset.nav === nav));
+  document.body.classList.remove("menu-open"); $("#menuBtn")?.setAttribute("aria-expanded", "false");
+  const view = $("#view");
   try {
-    if (h.startsWith("/m/")) return await viewMeeting(decodeURIComponent(h.slice(3)));
-    if (h === "/videos") return await viewVideos();
-    if (h === "/issues") return await viewIssues();
-    if (h === "/library") return await viewLibrary();
-    if (h.startsWith("/ref/")) return await viewRef(decodeURIComponent(h.slice(5)));
-    if (h === "/settings") return await viewSettings();
-    if (h === "/archive") return await viewArchive();
-    if (h === "/posts") return await viewPosts();
-    if (h === "/queue") return await viewQueue();
-    if (h.startsWith("/research")) return await viewResearch(h.split("/")[2] || "flags");
-    return await viewMeetings();
-  } catch (e) { if (e.message !== "auth") $("#view").innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+    if (h.startsWith("/m/")) await viewMeeting(decodeURIComponent(h.slice(3)));
+    else if (h === "/meetings") await viewMeetings();
+    else if (h === "/videos") await viewVideos();
+    else if (h === "/issues") await viewIssues();
+    else if (h === "/library") await viewLibrary();
+    else if (h.startsWith("/ref/")) await viewRef(decodeURIComponent(h.slice(5)));
+    else if (h === "/members") await viewMembers();
+    else if (h === "/ask") await viewAskSettings();
+    else if (h === "/alerts") await viewAlerts();
+    else if (h === "/tools" || h === "/settings") await viewTools();
+    else if (h === "/archive") await viewArchive();
+    else if (h === "/posts") await viewPosts();
+    else if (h === "/queue") await viewQueue();
+    else if (h.startsWith("/research")) await viewResearch(h.split("/")[2] || "flags");
+    else await viewToday();
+  } catch (e) { if (e.message !== "auth" && n === ROUTE_N) view.innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+  refreshCounts();
+}
+// Sidebar counts (what needs you, post ideas), refreshed after every page
+async function refreshCounts() {
+  try {
+    const c = await api("counts");
+    const set = (k, v) => document.querySelectorAll(`[data-count="${k}"]`).forEach((el) => { el.textContent = v || ""; el.hidden = !v; });
+    set("queue", c.needsYou); set("posts", c.ideas);
+  } catch (e) {}
+}
+$("#menuBtn")?.addEventListener("click", () => { const on = document.body.classList.toggle("menu-open"); $("#menuBtn").setAttribute("aria-expanded", String(on)); });
+
+// ---------- Today: the home page
+const shortDay = (d) => new Date(d + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+const bodyRow = (body, title, meta, right = "") => `<div class="trow"><i class="tbar" style="background:${BOARD_COLOR[body] || "#888"}"></i><div class="tt"><b>${title}</b><span>${meta}</span></div><div class="tr">${right}</div></div>`;
+async function viewToday() {
+  const d = await api("today"); setBodies(d.bodies);
+  const lr = d.lastRun, tick = d.lastTick;
+  const runOk = lr && !(lr.errors || []).length;
+  const stat = (n, label, href, hot) => `<a class="stat ${hot && n ? "hot" : ""}" href="${href}"><span class="big">${n}</span><span class="slbl">${label}</span></a>`;
+  const rows = [];
+  for (const h of d.held) rows.push(bodyRow(h.body, esc(h.title), `${esc(BODY_NAMES[h.body] || h.body)} · ${esc(shortDay(h.date))} · ${esc(h.reason)}`, `<span class="pill held">Held</span><a class="btn" href="#/queue">Review</a>`));
+  if (d.reports) rows.push(bodyRow("", `${d.reports} error report${d.reports === 1 ? "" : "s"} from readers`, "Sent from “Report an error” on the site", `<a class="btn" href="#/queue">Read</a>`));
+  for (const m of d.broken) rows.push(bodyRow(m.body, `${esc(BODY_NAMES[m.body] || m.body)}, ${esc(shortDay(m.date))}`, "The draft came back with no items", `<span class="pill bad">Problem</span><a class="btn" href="#/queue">See why</a>`));
+  for (const m of d.check) rows.push(bodyRow(m.body, `${esc(BODY_NAMES[m.body] || m.body)}, ${esc(shortDay(m.date))}`, "Minutes posted, not checked against the draft yet", `<span class="pill wait">Minutes</span><button class="primary" data-check="${esc(m.id)}">Check (a few cents)</button>`));
+  for (const m of d.problems) rows.push(bodyRow(m.body, `${esc(BODY_NAMES[m.body] || m.body)}, ${esc(shortDay(m.date))}`, esc(m.error || "Something went wrong"), `<span class="pill bad">Problem</span><a class="btn" href="#/m/${encodeURIComponent(m.id)}">Open</a>`));
+  if (d.ready.length) rows.push(bodyRow("", `${d.ready.length} meeting${d.ready.length === 1 ? " is" : "s are"} ready to draft`, d.ready.map((m) => `${esc(BODY_NAMES[m.body] || m.body)} ${esc(shortDay(m.date))}`).join(" · "), `<a class="btn" href="#/meetings" data-filter="ready">See them</a>`));
+  if (d.unsorted) rows.push(bodyRow("", `${d.unsorted} video${d.unsorted === 1 ? "" : "s"} need a meeting`, "Found on YouTube but not matched to a meeting", `<a class="btn" href="#/videos">Sort</a>`));
+  const up = d.upcoming.map((m) => bodyRow(m.body, esc(m.bodyName), `${esc(shortDay(m.date))}${m.time ? ` · ${esc(m.time)}` : ""}${m.state === "previewed" ? ` · ${m.items} item${m.items === 1 ? "" : "s"}` : ""}`,
+    m.cancelled ? `<span class="pill">Cancelled</span>` : m.maybeCanceled ? `<span class="pill wait">May be canceled</span>` : m.state === "previewed" ? `<span class="pill ok">Previewed</span>` : m.state === "agenda" ? `<span class="pill wait">Agenda posted</span>` : `<span class="pill">Waiting</span>`)).join("");
+  $("#view").innerHTML = `<div class="phead"><div><h1>Today</h1>
+      <div class="status"><span><i class="sdot ${lr ? (runOk ? "ok" : "bad") : ""}"></i>${lr ? `Daily run ${runOk ? "finished" : `had ${lr.errors.length} problem${lr.errors.length === 1 ? "" : "s"}`} ${esc(new Date(lr.at).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }))}` : "The daily run hasn't happened yet"}</span>${tick?.at ? `<span>Quick check ${esc(new Date(tick.at).toLocaleString("en-US", { hour: "numeric", minute: "2-digit" }))}</span>` : ""}${d.askMonthCents != null ? `<span>Ask: ${cents(d.askMonthCents)} this month</span>` : ""}</div></div></div>
+    <div class="stats">${stat(d.heldCount, "Items held for you", "#/queue", true)}${stat(d.reports, "Error reports", "#/queue", true)}${stat(d.check.length, "Minutes to check", "#/meetings", false)}${stat(d.ideaCount, "Post ideas", "#/posts", false)}</div>
+    <div class="tcols">
+      <section class="card"><h2>Needs you</h2>${rows.join("") || `<p class="muted">Nothing. Everything publishes on its own.</p>`}</section>
+      <section class="card"><h2>Coming up</h2>${up || `<p class="muted">Nothing in the next week.</p>`}
+        ${d.ideas.length ? `<h2 style="margin-top:1.4rem">Worth posting</h2>${d.ideas.map((x) => `<div class="trow"><div class="tt"><b>${esc(x.title)}</b><span>${esc(x.label)} · ${esc(x.why)}</span></div><div class="tr"><a class="btn" href="#/posts">${x.drafted ? "Open" : "Draft"}</a></div></div>`).join("")}` : ""}</section>
+    </div>`;
+  document.querySelectorAll("[data-filter]").forEach((a) => a.onclick = () => { FILTER = a.dataset.filter; store.set("vt-filter2", FILTER); });
+  document.querySelectorAll("[data-check]").forEach((b) => b.onclick = async () => {
+    b.disabled = true; b.textContent = "Checking… about a minute";
+    try { const r = await api("", { id: b.dataset.check, kind: "check" }, "/api/draft"); toast(`Checked: ${r.check.matched} match, ${r.check.conflicts} held for you.`, 5000); viewToday(); }
+    catch (e) { toast(e.message, 6000); b.disabled = false; b.textContent = "Try again"; }
+  });
 }
 
 // ---------- Meetings list
@@ -72,25 +126,23 @@ async function viewMeetings() {
     <div class="toolbar">
       <div>
         <h1>Meetings</h1>
-        <div class="meta">${lr ? `Last daily run ${new Date(lr.at).toLocaleString()}${lr.errors?.length ? ` · <span class="err">${lr.errors.length} problem(s)</span>` : ""}` : "The daily run hasn't happened yet."}${OV.lastTick?.at ? ` · Last quick check ${new Date(OV.lastTick.at).toLocaleString()}${OV.lastTick.calendar?.cityError ? ` · <span class="err">City calendar: ${esc(OV.lastTick.calendar.cityError)}</span>` : ""}` : ""}${unsorted ? ` · <a href="#/videos">${unsorted} video(s) need a meeting</a>` : ""}</div>
+        <div class="meta">${lr ? `Last daily run ${new Date(lr.at).toLocaleString()}${lr.errors?.length ? ` · <span class="err">${lr.errors.length} problem(s)</span>` : ""}` : "The daily run hasn't happened yet."}${OV.lastTick?.at ? ` · Last quick check ${new Date(OV.lastTick.at).toLocaleString()}${OV.lastTick.calendar?.cityError ? ` · <span class="err">City calendar: ${esc(OV.lastTick.calendar.cityError)}</span>` : ""}` : ""}</div>
       </div>
       <div class="actions">
-        <label class="btn" title="Drafts, minutes checks or reference documents made in a Claude chat (.json)">Import<input id="importFile" type="file" accept=".json,application/json" multiple hidden></label>
         ${counts.fill ? `<button id="fillOld" class="primary" title="Uses the Claude API">Fill in older meetings (${counts.fill})</button>` : ""}
-        <button id="export" title="Download every draft so Claude can check them against minutes in a chat, on your plan">Export for Claude</button>
         <button id="scan" title="Checks the calendars and both document pages, and previews any meeting in the next two days that has a new agenda">Check now</button>
         <button id="draftAll" class="primary" ${counts.ready ? "" : "disabled"}>Draft all ready (${counts.ready})</button>
       </div>
     </div>
     <div class="filter" style="margin-bottom:.8rem">
       <select id="bodyF" style="width:auto"><option value="">All boards</option>${Object.entries(BODY_NAMES).map(([k, n]) => `<option value="${k}" ${k === BODYF ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
-      ${[["live", "Live"], ["held", "Has held items"], ["check", "Minutes to check"], ["upcoming", "Upcoming"], ["ready", "Ready to draft"], ["problems", "Problems"], ["waiting", "Waiting on sources"], ["all", "All"]].map(([k, l]) => `<button data-f="${k}" class="${FILTER === k ? "on" : ""}">${l} (${counts[k]})</button>`).join("")}
+      ${unsorted ? `<a class="btn" href="#/videos">Unsorted videos (${unsorted})</a>` : ""}${[["live", "Live"], ["held", "Has held items"], ["check", "Minutes to check"], ["upcoming", "Upcoming"], ["ready", "Ready to draft"], ["problems", "Problems"], ["waiting", "Waiting on sources"], ["all", "All"]].map(([k, l]) => `<button data-f="${k}" class="${FILTER === k ? "on" : ""}">${l} (${counts[k]})</button>`).join("")}
     </div>
     <p id="progress" class="meta"></p>
     ${show.length ? `<table><thead><tr><th>Date</th><th>Body</th><th>Sources</th><th>Status</th><th></th></tr></thead><tbody>
       ${show.map((m) => `<tr>
         <td>${fmtDate(m.date)}</td>
-        <td>${BODY_NAMES[m.body] || m.body}</td>
+        <td><span class="bname"><i class="bdot" style="background:${BOARD_COLOR[m.body] || "#888"}"></i>${esc(BODY_NAMES[m.body] || m.body)}</span></td>
         <td class="src">${src("Agenda", m.hasPacket, OV.bodies?.[m.body]?.docs === null)}${src("Minutes", m.hasMinutes, OV.bodies?.[m.body]?.docs === null)}${m.hasVideo && !m.hasTranscript ? `<span class="no" title="Video found, transcript not in yet. The Mac job retries each morning.">Video, no transcript yet</span>` : src("Video", m.hasVideo)}</td>
         <td>${statusText(m)}</td>
         <td style="text-align:right">${m.ready ? `<button data-draft="${m.id}">Draft</button> ` : ""}${m.status === "drafted" || m.status === "approved" || m.status === "error" ? `<a class="btn" href="#/m/${encodeURIComponent(m.id)}">Open</a>` : ""}${m.needsCheck ? ` <button data-check="${m.id}" title="Have Claude compare this draft with the official minutes (API, a few cents)">Check minutes</button>` : ""}${m.needsPreview || m.previewError ? ` <button data-preview="${m.id}" title="Have Claude read the agenda packet (API)">Preview</button>` : ""}</td>
@@ -106,20 +158,7 @@ async function viewMeetings() {
     catch (e) { toast(e.message, 6000); b.disabled = false; b.textContent = "Try again"; }
   });
   $("#draftAll").onclick = () => draftMany(ms.filter((m) => m.ready).sort((a, b) => a.date.localeCompare(b.date)).map((m) => m.id));
-  $("#importFile").onchange = async (e) => {
-    const files = [];
-    try { for (const f of e.target.files) files.push(JSON.parse(await f.text())); } catch (err) { return toast("One of those files isn't valid JSON."); }
-    try { const r = await api("import", { files }); toast(r.done.join(" · "), 6000); viewMeetings(); } catch (err) { toast(err.message, 6000); }
-    e.target.value = "";
-  };
   if ($("#fillOld")) $("#fillOld").onclick = () => fillOlder(toFill);
-  $("#export").onclick = async () => {
-    const data = await api("export");
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: "application/json" }));
-    a.download = `localmeetings-export-${new Date().toISOString().slice(0, 10)}.json`; a.click();
-    toast("Saved to your Downloads. Move it into Vote Tracker/data and tell Claude in the chat.", 7000);
-  };
   $("#scan").onclick = async () => {
     $("#scan").disabled = true; $("#scan").textContent = "Checking… up to a couple of minutes";
     try {
@@ -202,7 +241,7 @@ async function viewMeeting(id) {
   const issues = (await api("issues")).issues;
   const dm = m.draftMeta || {};
   $("#view").innerHTML = `
-    <p><a href="#/">← Meetings</a></p>
+    <p><a href="#/meetings">← Meetings</a></p>
     <div class="review">
       <div>
         <h1>${BODY_NAMES[m.body]} · ${fmtDate(m.date)}</h1>
@@ -227,6 +266,7 @@ async function viewMeeting(id) {
           ${record.newTerms?.length ? `<details><summary>New terms Claude explained (${record.newTerms.length})</summary>${record.newTerms.map((t) => `<p><strong>${esc(t.term)}</strong>: ${esc(t.plain)}</p>`).join("")}</details>` : ""}
         </div>
         <datalist id="issueKeys">${issues.map((i) => `<option value="${esc(i.key)}">${esc(i.title)}</option>`).join("")}</datalist>
+        <div class="ibar"><h2>Items (${(record.items || []).length})</h2><span class="actions"><button class="linkish" id="openAll">Open all</button><button class="linkish" id="shutAll">Close all</button></span></div>
         <div id="items"></div>
         <p><button id="addItem">Add an item</button></p>
         <div class="stickybar actions">
@@ -248,13 +288,18 @@ async function viewMeeting(id) {
           : `<div class="card muted">No video attached. If it's on YouTube, attach it from <a href="#/videos">Unsorted videos</a> or use the browser button.</div>`}
       </aside>
     </div>`;
+  CUR.open = null;
   renderItems();
+  CUR.open = new Set([...document.querySelectorAll("#items .item:not(.shut)")].map((el) => +el.dataset.i));
+  $("#openAll").onclick = () => { CUR.open = new Set((CUR.record.items || []).map((_, i) => i)); renderItems(); };
+  $("#shutAll").onclick = () => { CUR.open = new Set(); renderItems(); };
+  $("#items").addEventListener("click", (e) => { const t = e.target.closest("[data-toggle]"); if (!t) return; const i = +t.dataset.toggle; CUR.open.has(i) ? CUR.open.delete(i) : CUR.open.add(i); const card = t.closest(".item"); card.classList.toggle("shut"); $(".caret", t).textContent = card.classList.contains("shut") ? "▸" : "▾"; });
   $("#view").addEventListener("input", (e) => { if (e.target.matches("[data-k]") && !e.target.closest("#items")) { setPath(CUR.record, e.target.dataset.k, e.target.value); markDirty(); } });
-  $("#addItem").onclick = () => { CUR.record.items.push({ title: "New item", whatItIs: "", category: "other", stage: "discussed", vote: { method: "none", result: "no vote" }, confidence: "high", sources: [] }); renderItems(); markDirty(); };
+  $("#addItem").onclick = () => { CUR.record.items.push({ title: "New item", whatItIs: "", category: "other", stage: "discussed", vote: { method: "none", result: "no vote" }, confidence: "high", sources: [] }); CUR.open.add(CUR.record.items.length - 1); renderItems(); markDirty(); };
   $("#saveBtn").onclick = () => save(false);
   if ($("#approveBtn")) $("#approveBtn").onclick = () => save(true);
   if ($("#unapprove")) $("#unapprove").onclick = async () => { await api("unapprove", { id: m.id }); toast("Moved back to drafts."); viewMeeting(m.id); };
-  if ($("#skip")) $("#skip").onclick = async () => { if (!confirm("Skip this meeting? It won't be drafted or published. You can undo this from All.")) return; await api("skip", { id: m.id }); location.hash = "#/"; };
+  if ($("#skip")) $("#skip").onclick = async () => { if (!confirm("Skip this meeting? It won't be drafted or published. You can undo this from All.")) return; await api("skip", { id: m.id }); location.hash = "#/meetings"; };
   $("#pubToggle").onclick = async () => { await api("publishMeeting", { id: m.id, on: !!m.unpublished }); toast(m.unpublished ? "Back on the public site." : "Taken off the public site."); viewMeeting(m.id); };
   $("#items").addEventListener("click", async (e) => {
     const b = e.target.closest("[data-resolve]"); if (!b) return;
@@ -294,9 +339,13 @@ function renderItems() {
   const sel = (path, opts, val) => `<select data-p="${path}">${opts.map((o) => `<option ${o === val ? "selected" : ""}>${o}</option>`).join("")}</select>`;
   box.innerHTML = items.map((it, i) => {
     const v = it.vote || {};
-    return `<div class="card item" data-i="${i}">
+    const flagged = !!(it.hold || it.holdReason || it.checkNote || it.confidence === "low");
+    const open = CUR.open?.has(i) ?? flagged;
+    const res = it.vote?.result || "";
+    return `<div class="card item ${open ? "" : "shut"}" data-i="${i}">
       <div class="head">
-        <h3>${i + 1}. ${esc(it.title)}</h3>
+        <h3 class="itoggle" data-toggle="${i}"><span class="caret">${open ? "▾" : "▸"}</span>${i + 1}. ${esc(it.title)}</h3>
+        <span class="imeta">${it.amount != null && it.amount !== "" ? `<span class="pill">${money(it.amount)}</span>` : ""}${res ? `<span class="pill ${res === "passed" ? "ok" : res === "failed" ? "bad" : ""}">${esc(it.stage || res)}</span>` : ""}${flagged ? `<span class="pill held">Check</span>` : ""}</span>
         <div class="actions">
           ${it.videoSeconds != null && CUR.meeting.videoId ? `<button data-seek="${it.videoSeconds}">▶ ${clock(it.videoSeconds)}</button>` : ""}
           <button data-up="${i}" title="Move up">↑</button>
@@ -305,7 +354,7 @@ function renderItems() {
       </div>
       ${itemBanner(it, i)}
       ${it.checkNote || it.confidence === "low" ? `<div class="check"><strong>Note${it.confidence === "low" ? " (shown publicly)" : ""}:</strong> ${esc(it.checkNote || "Low confidence.")} <span class="meta">(confidence: ${esc(it.confidence)})</span></div>` : ""}
-      <div class="grid">
+      <div class="grid ibody">
         <div class="row">
           <div class="grow"><label>Title</label><input data-p="title" value="${esc(it.title)}"></div>
           <div><label>Number</label><input data-p="docNumber" value="${esc(it.docNumber)}"></div>
@@ -698,36 +747,14 @@ async function arcDraft(b, list) {
   setTimeout(arcShow, 1500);
 }
 
-async function viewSettings() {
+// ---------- Setup pages (Settings used to be one long page)
+async function viewMembers() {
   OV = await api("overview"); setBodies(OV.bodies);
   const roster = OV.roster;
-  const origin = location.origin;
-  const bm = bookmarklet(origin);
-  $("#view").innerHTML = `
-    <h1>Settings</h1>
-    <h2>Browser button for transcripts</h2>
-    <div class="card">
-      <p>Drag this to your bookmarks bar: <a class="bm" href="${esc(bm)}">Send to localmeetings</a></p>
-      <p class="muted">Use it if the Mac job misses a meeting. Open the meeting video on YouTube, click the bookmark, and the transcript is sent here. A small window confirms it.</p>
-    </div>
-    <h2>Board members</h2>
-    <div class="card">
-      <p class="muted">Used to fix names in captions, and later to sort votes by party on the internal view.</p>
-      ${Object.entries(roster).map(([body, list]) => `<h3>${BODY_NAMES[body] || body}</h3>
-        <div data-roster="${body}">${list.map((r) => rosterRow(r)).join("")}</div>
-        <button data-addr="${body}">Add member</button>`).join("")}
-      <p class="actions" style="margin-top:1rem"><button id="saveRoster" class="primary">Save members</button></p>
-    </div>
-    <h2>Ask page (core group)</h2>
-    <div class="card" id="askBox"><p class="muted">Loading…</p></div>
-    <h2>Phone alerts</h2>
-    <div class="card" id="pushBox"><p class="muted">Loading…</p></div>
-    <h2>Daily check</h2>
-    <div class="card">
-      <p>Runs every morning: looks for new agendas and minutes, drafts up to two meetings that have everything they need, checks up to four drafts against minutes that came out since, and writes previews for up to two upcoming agendas. All of these use the Claude API.</p>
-      <button id="runNow">Run it now</button> <span id="runOut" class="meta"></span>
-      ${OV.lastRun ? `<pre class="meta" style="white-space:pre-wrap">${esc(JSON.stringify(OV.lastRun, null, 1))}</pre>` : ""}
-    </div>`;
+  $("#view").innerHTML = `<div class="phead"><div><h1>Board members</h1><p class="sub">Used to fix names in captions and to sort votes by party on the internal view.</p></div><button id="saveRoster" class="primary">Save members</button></div>
+    <div class="cols2">${Object.entries(roster).map(([body, list]) => `<div class="card"><h3 class="bh"><i class="bdot" style="background:${BOARD_COLOR[body] || "#888"}"></i>${esc(BODY_NAMES[body] || body)}</h3>
+      <div data-roster="${body}">${list.map((r) => rosterRow(r)).join("")}</div>
+      <button data-addr="${body}" class="linkish">+ Add member</button></div>`).join("")}</div>`;
   document.querySelectorAll("[data-addr]").forEach((b) => b.onclick = () => $(`[data-roster="${b.dataset.addr}"]`).insertAdjacentHTML("beforeend", rosterRow({ name: "" })));
   $("#saveRoster").onclick = async () => {
     const out = {};
@@ -736,11 +763,51 @@ async function viewSettings() {
     });
     await api("roster", { roster: out }); toast("Saved.");
   };
-  askSettings(); pushSettings();
+}
+async function viewAskSettings() {
+  $("#view").innerHTML = `<div class="phead"><div><h1>Ask and spending</h1><p class="sub">Who can use the Ask page, their limits, and what it has cost.</p></div></div><div class="card" id="askBox"><p class="muted">Loading…</p></div>`;
+  await askSettings();
+}
+async function viewAlerts() {
+  $("#view").innerHTML = `<div class="phead"><div><h1>Alerts</h1><p class="sub">Phone alerts people turn on from the public site.</p></div></div><div class="card" id="pushBox"><p class="muted">Loading…</p></div>`;
+  await pushSettings();
+}
+async function viewTools() {
+  OV = await api("overview");
+  const bm = bookmarklet(location.origin);
+  $("#view").innerHTML = `<div class="phead"><div><h1>Tools</h1><p class="sub">Things you need now and then.</p></div></div>
+    <div class="cols2">
+      <div class="card"><h3>Daily check</h3>
+        <p>Runs every morning: looks for new agendas and minutes, drafts up to two meetings that have everything they need, checks up to four drafts against minutes, and previews up to two upcoming agendas. Uses the Claude API.</p>
+        <div class="actions"><button id="runNow">Run it now</button><span id="runOut" class="meta"></span></div>
+        ${OV.lastRun ? `<details><summary>Last run, ${esc(new Date(OV.lastRun.at).toLocaleString())}</summary><pre class="meta" style="white-space:pre-wrap">${esc(JSON.stringify(OV.lastRun, null, 1))}</pre></details>` : ""}</div>
+      <div class="card"><h3>Browser button for transcripts</h3>
+        <p>Drag this to your bookmarks bar: <a class="bm" href="${esc(bm)}">Send to localmeetings</a></p>
+        <p class="muted">Use it if the Mac job misses a meeting. Open the meeting video on YouTube, click the bookmark, and the transcript is sent here.</p></div>
+      <div class="card"><h3>Import from a Claude chat</h3>
+        <p class="muted">Drafts, minutes checks or reference documents made in a Claude chat (.json).</p>
+        <label class="btn">Choose files<input id="importFile" type="file" accept=".json,application/json" multiple hidden></label></div>
+      <div class="card"><h3>Export for Claude</h3>
+        <p class="muted">Downloads every draft so Claude can check them against minutes in a chat, on your plan.</p>
+        <button id="export">Download export</button></div>
+    </div>`;
   $("#runNow").onclick = async () => {
     $("#runNow").disabled = true; $("#runOut").textContent = "Running… this can take a few minutes if it drafts.";
     try { const r = await fetch("/api/cron", { headers: { "x-admin-code": CODE } }).then((x) => x.json()); $("#runOut").textContent = r.error ? r.error : `Found ${r.scan.packets} documents; drafted ${r.drafted.length}, checked ${r.checked?.length || 0} against minutes, previewed ${r.previewed?.length || 0}.${r.errors?.length ? " Problems: " + r.errors.join("; ") : ""}`; } catch (e) { $("#runOut").textContent = e.message; }
     $("#runNow").disabled = false;
+  };
+  $("#importFile").onchange = async (e) => {
+    const files = [];
+    try { for (const f of e.target.files) files.push(JSON.parse(await f.text())); } catch (err) { return toast("One of those files isn't valid JSON."); }
+    try { const r = await api("import", { files }); toast(r.done.join(" · "), 6000); } catch (err) { toast(err.message, 6000); }
+    e.target.value = "";
+  };
+  $("#export").onclick = async () => {
+    const data = await api("export");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: "application/json" }));
+    a.download = `localmeetings-export-${new Date().toISOString().slice(0, 10)}.json`; a.click();
+    toast("Saved to your Downloads. Move it into Vote Tracker/data and tell Claude in the chat.", 7000);
   };
 }
 // Ask page: access codes, limits and the question log
@@ -817,7 +884,6 @@ function bookmarklet(origin) {
   return "javascript:" + encodeURIComponent(code);
 }
 
-route();
 
 // ---------- Posts: Facebook drafts from the public record
 // Tabs: Ideas (what's worth posting), Drafts (list + one open editor), Posted (compact history), Style.
@@ -1088,3 +1154,5 @@ function styleForm() {
     b.disabled = false; b.textContent = `Try it (${PCOST})`;
   };
 }
+
+route();
