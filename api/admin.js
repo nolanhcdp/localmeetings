@@ -10,7 +10,21 @@ import { classifyIssue, KINDS } from "../lib/roadmaps.js";
 import { videoInventory } from "../lib/live.js";
 import { CHANNELS } from "../lib/county.js";
 import { json, fail, isAdmin } from "../lib/http.js";
-import { postsOverview, draftPost, markPosted, deleteDraft, saveStyle, tryStyle } from "../lib/posts.js";
+import { postsOverview, draftPost, markPosted, deleteDraft, saveStyle, tryStyle, suggestions } from "../lib/posts.js";
+import { calendar } from "../lib/public.js";
+import { today as todayDate } from "../lib/pipeline.js";
+
+// What needs a person: held items, open error reports, drafts that came back with no items
+async function needsYou() {
+  const meetings = await listMeetings();
+  const held = [];
+  for (const m of meetings) { normalizeRecord(m.draft); normalizeRecord(m.record); (recordOf(m)?.items || []).forEach((it, idx) => { if (itemLabel(m, it) === "held") held.push({ meetingId: m.id, body: m.body, date: m.date, idx, title: it.title, reason: it.hold?.reason || it.checkNote || "Sources disagree" }); }); }
+  held.sort((a, b) => b.date.localeCompare(a.date));
+  const broken = meetings.filter((m) => { const r = recordOf(m); return r && (m.draftProblem || (r.summary && !(r.items || []).length)); });
+  const [ids] = await redis(["SMEMBERS", "reports"]);
+  const reports = (await getMany((ids || []).map((id) => `report:${id}`))).filter((r) => r && !r.done);
+  return { meetings, held, broken, reports };
+}
 export const config = { maxDuration: 60 };
 
 const slim = (m) => { normalizeRecord(m.draft); normalizeRecord(m.record); return {
@@ -151,6 +165,26 @@ export async function POST(request) {
         return json(await broadcast({ title, body, url, tag: "custom-" + Date.now().toString(36) }));
       }
       case "askConfig": { const cfg = { monthlyCents: Math.max(0, Math.round(+p.monthlyCents || 0)), dailyCents: Math.max(0, Math.round(+p.dailyCents || 0)) }; await setJSON("config:ask", cfg); return json({ config: cfg }); }
+      case "counts": {
+        const [n, ideas] = await Promise.all([needsYou(), suggestions().catch(() => [])]);
+        return json({ needsYou: n.held.length + n.reports.length + n.broken.length, ideas: ideas.filter((x) => !x.posted && !x.drafted).length });
+      }
+      case "today": {
+        const t = todayDate();
+        const [n, ideas, cal, videos, lastRun, lastTick, spend] = await Promise.all([needsYou(), suggestions().catch(() => []), calendar(), listVideos(), getJSON("status:lastRun"), getJSON("status:lastTick"), spendStatus(ADMIN_MEMBER).catch(() => ({}))]);
+        const sl = n.meetings.map(slim);
+        const plus7 = new Date(Date.parse(t + "T12:00:00Z") + 7 * 864e5).toISOString().slice(0, 10);
+        return json({
+          today: t, lastRun, lastTick, askMonthCents: spend.monthCents ?? null, bodies: BODIES,
+          held: n.held.slice(0, 8), heldCount: n.held.length, reports: n.reports.length, broken: n.broken.map((m) => ({ id: m.id, body: m.body, date: m.date })),
+          check: sl.filter((m) => m.needsCheck).map((m) => ({ id: m.id, body: m.body, date: m.date })),
+          problems: sl.filter((m) => m.status === "error" || m.previewError).map((m) => ({ id: m.id, body: m.body, date: m.date, error: m.error || m.previewError })),
+          ready: sl.filter((m) => m.ready).map((m) => ({ id: m.id, body: m.body, date: m.date })),
+          unsorted: videos.filter((v) => !v.meetingId && !["other", "budget"].includes(v.body)).length,
+          ideas: ideas.filter((x) => !x.posted).slice(0, 4), ideaCount: ideas.filter((x) => !x.posted && !x.drafted).length,
+          upcoming: cal.meetings.filter((m) => !m.past && m.date >= t && m.date <= plus7).slice(0, 8).map((m) => ({ id: m.id, body: m.body, bodyName: m.bodyName, date: m.date, time: m.time, state: m.state, cancelled: m.cancelled, maybeCanceled: m.maybeCanceled, items: (m.items || []).length })),
+        });
+      }
       case "posts": return json(await postsOverview());
       case "postDraft": return json({ draft: await draftPost({ type: p.type, ref: p.ref, key: p.key, tweak: String(p.tweak || "").slice(0, 400), current: String(p.current || "").slice(0, 6000) }) });
       case "postMark": return json(await markPosted(p.key, p.on !== false));
