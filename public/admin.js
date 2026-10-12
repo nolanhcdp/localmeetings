@@ -897,48 +897,105 @@ function draftCard(d) {
   return el;
 }
 
-// The post image. One board: that board's color from the site, white type. Several boards (or none): white, with each
-// point's dot in its board's color and a strip of every board's color across the top.
+// The post image. One board: that board's color from the site, white type. Several boards (or none): white, with a
+// strip of each board's color across the top. Each post type has its own layout; only real sequences get numbered steps.
 const BOARD_COLOR = { council: "#0b7a6e", commissioners: "#8a5a00", plan: "#5b8a3c", "city-council": "#2b6cb0", "city-plan": "#6b4fbb", "city-bza": "#6b4fbb", "city-works": "#6b4fbb" };
 async function drawCard(cv, card) {
   try { await Promise.all(['700 80px "Fraunces"', 'italic 400 30px "Lora"', '400 30px "Inter"', '800 40px "Inter"'].map((f) => document.fonts.load(f))); } catch (e) {}
   const boards = (card.boards || []).filter((b) => BOARD_COLOR[b]);
   const one = boards.length === 1 ? BOARD_COLOR[boards[0]] : null;
-  const bg = one || "#ffffff", ink = one ? "#ffffff" : "#1c1c1c", soft = one ? "rgba(255,255,255,.88)" : "#3a3a3a";
-  const x = cv.getContext("2d"), W = 1080, H = 1350, L = 88, R = W - 88;
-  x.fillStyle = bg; x.fillRect(0, 0, W, H); x.textBaseline = "alphabetic";
-  if (!one) { // a strip of each board's color (distinct colors only), or ink when no board is named
-    const cols = [...new Set(boards.map((b) => BOARD_COLOR[b]))]; const list = cols.length ? cols : ["#1c1c1c"];
-    list.forEach((c, i) => { x.fillStyle = c; x.fillRect((W / list.length) * i, 0, W / list.length + 1, 22); });
+  const C = { bg: one || "#ffffff", ink: one ? "#ffffff" : "#1c1c1c", soft: one ? "rgba(255,255,255,.88)" : "#3a3a3a", faint: one ? "rgba(255,255,255,.45)" : "#b9b5ad", rule: one ? "rgba(255,255,255,.35)" : "#e2dfd8" };
+  const colorOf = (b) => one ? C.ink : BOARD_COLOR[b] || "#1c1c1c";
+  const x = cv.getContext("2d"), W = 1080, H = 1350, L = 88, R = W - 88, BOTTOM = H - 140;
+  x.fillStyle = C.bg; x.fillRect(0, 0, W, H); x.textBaseline = "alphabetic"; x.textAlign = "left";
+  if (!one) { const cols = [...new Set(boards.map((b) => BOARD_COLOR[b]))]; const list = cols.length ? cols : ["#1c1c1c"]; list.forEach((c, i) => { x.fillStyle = c; x.fillRect((W / list.length) * i, 0, W / list.length + 1, 22); }); }
+  const font = (f) => (x.font = f);
+  const wrap = (text, f, width) => { font(f); const out = []; let line = ""; for (const w of String(text || "").split(/\s+/).filter(Boolean)) { const t = line ? line + " " + w : w; if (x.measureText(t).width > width && line) { out.push(line); line = w; } else line = t; } if (line) out.push(line); return out; };
+  const text = (t, f, color, X, Y, align = "left") => { font(f); x.fillStyle = color; x.textAlign = align; x.fillText(t, X, Y); x.textAlign = "left"; };
+  const fit = (t, weight, family, max, min, width, maxLines) => { let s = max, ls; do { ls = wrap(t, `${weight} ${s}px ${family}`, width); s -= 4; } while ((ls.length > maxLines || ls.some((l) => x.measureText(l).width > width)) && s > min); return { size: s + 4, lines: ls }; };
+  const pill = (t, X, Y) => { font('700 26px "Inter", sans-serif'); const w = x.measureText(t).width + 28; x.fillStyle = one ? "rgba(255,255,255,.18)" : "#f3eee2"; x.beginPath(); x.roundRect(X, Y - 30, w, 42, 21); x.fill(); x.fillStyle = C.ink; x.fillText(t, X + 14, Y); return w; };
+
+  text("Second Reading", '700 40px "Fraunces", Georgia, serif', C.ink, L, 116);
+  text(card.series || "", 'italic 400 32px "Lora", Georgia, serif', C.ink, R, 116, "right");
+  text("SecondReading.org", '800 44px "Inter", sans-serif', C.ink, L, H - 62);
+  text("Kokomo and Howard County", 'italic 400 28px "Lora", Georgia, serif', C.soft, R, H - 64, "right");
+  const header = (maxSize = 112) => {
+    const h = fit(card.headline, 700, '"Fraunces", Georgia, serif', maxSize, 60, R - L, 3);
+    let y = 158 + h.size; for (const l of h.lines) { text(l, `700 ${h.size}px "Fraunces", Georgia, serif`, C.ink, L, y); y += h.size * 0.98; }
+    if (card.sub) { y += 10; for (const l of wrap(card.sub, 'italic 400 36px "Lora", Georgia, serif', R - L)) { text(l, 'italic 400 36px "Lora", Georgia, serif', C.soft, L, y); y += 46; } }
+    return y + 30;
+  };
+  const layout = card.layout || "items";
+
+  if (layout === "number") {
+    let y = 170;
+    const f = fit(card.figure || card.headline, 700, '"Fraunces", Georgia, serif', 230, 90, R - L, 2);
+    y += f.size * 0.9; for (const l of f.lines) { text(l, `700 ${f.size}px "Fraunces", Georgia, serif`, C.ink, L, y); y += f.size; }
+    y += 10; const h = fit(card.figure ? card.headline : "", 700, '"Fraunces", Georgia, serif', 72, 44, R - L, 3);
+    for (const l of h.lines) { text(l, `700 ${h.size}px "Fraunces", Georgia, serif`, C.ink, L, y + h.size * 0.4); y += h.size * 1.05; }
+    if (card.sub) { y += 24; for (const l of wrap(card.sub, 'italic 400 38px "Lora", Georgia, serif', R - L)) { text(l, 'italic 400 38px "Lora", Georgia, serif', C.soft, L, y); y += 50; } }
+    y += 40; x.fillStyle = C.rule; x.fillRect(L, y, R - L, 3); y += 70;
+    for (const c of card.context || []) { for (const l of wrap(c, '400 38px "Inter", sans-serif', R - L)) { text(l, '400 38px "Inter", sans-serif', C.ink, L, y); y += 52; } y += 22; }
+    return;
   }
-  x.fillStyle = ink;
-  const wrap = (text, font, width) => { x.font = font; const out = []; let line = ""; for (const w of String(text || "").split(/\s+/).filter(Boolean)) { const t = line ? line + " " + w : w; if (x.measureText(t).width > width && line) { out.push(line); line = w; } else line = t; } if (line) out.push(line); return out; };
-  x.font = '700 40px "Fraunces", Georgia, serif'; x.fillText("Second Reading", L, 116);
-  x.font = 'italic 400 32px "Lora", Georgia, serif'; x.textAlign = "right"; x.fillText(card.series || "", R, 116); x.textAlign = "left";
-  let size = 112, lines;
-  do { lines = wrap(card.headline, `700 ${size}px "Fraunces", Georgia, serif`, R - L); size -= 6; } while ((lines.length > 3 || lines.some((l) => x.measureText(l).width > R - L)) && size > 60);
-  size += 6; let y = 154 + size;
-  x.font = `700 ${size}px "Fraunces", Georgia, serif`; for (const l of lines) { x.fillText(l, L, y); y += size * 0.98; }
-  if (card.sub) { y += 14; x.fillStyle = soft; for (const l of wrap(card.sub, 'italic 400 36px "Lora", Georgia, serif', R - L)) { x.font = 'italic 400 36px "Lora", Georgia, serif'; x.fillText(l, L, y); y += 46; } x.fillStyle = ink; }
-  const pts = card.points || [], top = y + 40, bottom = H - 150;
-  let ts = 32;
-  const layout = (ts) => pts.map((p) => ({ p, body: wrap(p.text, `400 ${ts}px "Inter", sans-serif`, R - L - 120) })).map((o) => ({ ...o, h: ts * 1.35 + 14 + o.body.length * ts * 1.3 }));
-  let lay = layout(ts);
-  while (lay.reduce((a, o) => a + o.h, 0) + 18 * (pts.length - 1) > bottom - top && ts > 22) { ts -= 2; lay = layout(ts); }
-  const g = Math.max(18, Math.min(44, (bottom - top - lay.reduce((a, o) => a + o.h, 0)) / Math.max(1, pts.length - 1)));
-  y = top; const cx = L + 40;
-  if (pts.length > 1) { x.fillStyle = one ? "rgba(255,255,255,.7)" : "#d9d6cf"; x.fillRect(cx - 2.5, top + 40, 5, lay.slice(0, -1).reduce((a, o) => a + o.h + g, 0)); }
-  lay.forEach((o, i) => {
-    const dot = one ? "#ffffff" : BOARD_COLOR[o.p.board] || "#1c1c1c";
-    x.fillStyle = dot; x.beginPath(); x.arc(cx, y + 40, 40, 0, Math.PI * 2); x.fill();
-    x.fillStyle = one ? one : "#ffffff"; x.font = '800 36px "Inter", sans-serif'; x.textAlign = "center"; x.fillText(String(i + 1), cx, y + 53); x.textAlign = "left";
-    x.fillStyle = ink; x.font = `800 ${Math.round(ts * 1.3)}px "Inter", sans-serif`; x.fillText(o.p.label, L + 120, y + ts * 1.15);
-    let by = y + ts * 1.35 + 14 + ts; x.font = `400 ${ts}px "Inter", sans-serif`; x.fillStyle = soft;
-    for (const l of o.body) { x.fillText(l, L + 120, by); by += ts * 1.3; }
-    y += o.h + g;
+
+  const top = header();
+  if (layout === "week") {
+    const rows = card.rows || []; const avail = BOTTOM - top; const rowH = Math.min(190, avail / Math.max(1, rows.length));
+    const ts = rowH < 110 ? 26 : rowH < 150 ? 30 : 36; let y = top;
+    rows.forEach((r, i) => {
+      if (i) { x.fillStyle = C.rule; x.fillRect(L, y, R - L, 2); }
+      const by = y + ts + 18;
+      text(r.day, `800 ${ts + 12}px "Inter", sans-serif`, C.ink, L, by + 4);
+      text(r.date, `400 ${ts - 2}px "Inter", sans-serif`, C.soft, L, by + ts + 10);
+      const X = L + 190;
+      font(`800 ${ts}px "Inter", sans-serif`); x.fillStyle = colorOf(r.board); x.fillText(r.boardName, X, by);
+      const bw = x.measureText(r.boardName).width; if (r.time) text("  " + r.time, `400 ${ts}px "Inter", sans-serif`, C.soft, X + bw, by);
+      const ls = wrap(r.line, `400 ${ts}px "Inter", sans-serif`, R - X).slice(0, rowH < 100 ? 1 : 2);
+      ls.forEach((l, k) => text(k === ls.length - 1 && wrap(r.line, `400 ${ts}px "Inter", sans-serif`, R - X).length > ls.length ? l.replace(/\s*\S*$/, "…") : l, `400 ${ts}px "Inter", sans-serif`, C.ink, X, by + (k + 1) * (ts * 1.3)));
+      y += rowH;
+    });
+    return;
+  }
+
+  if (layout === "steps") {
+    const steps = card.steps || []; const avail = BOTTOM - top - 40; const gapH = Math.min(230, avail / Math.max(1, steps.length)); const big = gapH >= 170, tS = big ? 46 : 36, bS = big ? 34 : 30;
+    const cx = L + 36; let y = top + 36;
+    if (steps.length > 1) { x.fillStyle = C.rule; x.fillRect(cx - 2.5, y, 5, gapH * (steps.length - 1)); }
+    steps.forEach((st, i) => {
+      const col = colorOf(st.board), later = st.state === "later";
+      if (st.state === "done") { x.fillStyle = col; x.beginPath(); x.arc(cx, y, 36, 0, Math.PI * 2); x.fill(); x.strokeStyle = C.bg; x.lineWidth = 7; x.beginPath(); x.moveTo(cx - 14, y + 1); x.lineTo(cx - 3, y + 12); x.lineTo(cx + 16, y - 11); x.stroke(); }
+      else if (st.state === "next") { x.fillStyle = C.bg; x.beginPath(); x.arc(cx, y, 36, 0, Math.PI * 2); x.fill(); x.strokeStyle = col; x.lineWidth = 8; x.stroke(); text(String(i + 1), '800 32px "Inter", sans-serif', col, cx, y + 11, "center"); }
+      else if (later) { x.fillStyle = C.bg; x.beginPath(); x.arc(cx, y, 36, 0, Math.PI * 2); x.fill(); x.strokeStyle = C.faint; x.lineWidth = 4; x.stroke(); text(String(i + 1), '700 30px "Inter", sans-serif', C.faint, cx, y + 10, "center"); }
+      else { x.fillStyle = col; x.beginPath(); x.arc(cx, y, 36, 0, Math.PI * 2); x.fill(); text(String(i + 1), '800 32px "Inter", sans-serif', one ? C.bg : "#ffffff", cx, y + 11, "center"); }
+      const X = L + 110;
+      const tl = wrap(st.title + (st.state === "next" ? "  ← next" : ""), `800 ${tS}px "Inter", sans-serif`, R - X).slice(0, 2);
+      tl.forEach((l, k) => text(l, `800 ${tS}px "Inter", sans-serif`, later ? C.faint : C.ink, X, y + tS * 0.35 + k * tS * 1.15 - (tl.length - 1) * tS * 0.6));
+      text(st.boardName + (st.final ? " · final say" : ""), `400 ${bS}px "Inter", sans-serif`, later ? C.faint : one ? C.soft : colorOf(st.board), X, y + tS * 0.35 + (tl.length - 1) * tS * 0.55 + bS * 1.35);
+      y += gapH;
+    });
+    return;
+  }
+
+  // items: separate matters, no numbers; each item's tag and note stay with it
+  const items = (card.items || (card.points || []).map((p) => ({ title: p.label, text: p.text, board: p.board })));
+  let ts = 44;
+  const measure = (ts) => items.map((it) => ({ it, body: wrap(it.text, `400 ${ts}px "Inter", sans-serif`, R - L - 28), note: it.note ? wrap(it.note, `italic 400 ${ts - 2}px "Lora", Georgia, serif`, R - L - 28 - (it.tag ? 240 : 0)) : [] }))
+    .map((o) => ({ ...o, h: ts * 1.25 + 14 + o.body.length * ts * 1.3 + (o.it.tag || o.note.length ? 20 + Math.max(42, o.note.length * ts * 1.25) : 0) }));
+  let m = measure(ts);
+  const total = (m) => m.reduce((a, o) => a + o.h, 0) + 56 * (m.length - 1);
+  while (total(m) > BOTTOM - top && ts > 22) { ts -= 2; m = measure(ts); }
+  const gap = Math.min(80, Math.max(40, (BOTTOM - top - m.reduce((a, o) => a + o.h, 0)) / Math.max(1, m.length - 1) / 1.6));
+  let y = top;
+  m.forEach((o, i) => {
+    if (i) { x.fillStyle = C.rule; x.fillRect(L, y - gap / 2, R - L, 2); }
+    x.fillStyle = colorOf(o.it.board); x.fillRect(L, y + 4, 8, o.h - 8);
+    const X = L + 28; let by = y + ts * 1.1;
+    text(o.it.title, `800 ${Math.round(ts * 1.25)}px "Inter", sans-serif`, C.ink, X, by); by += 14 + ts * 1.15;
+    for (const l of o.body) { text(l, `400 ${ts}px "Inter", sans-serif`, C.soft, X, by); by += ts * 1.3; }
+    if (o.it.tag || o.note.length) { by += 22; let nx = X; if (o.it.tag) nx += pill(o.it.tag, X, by) + 18; o.note.forEach((l, k) => text(l, `italic 400 ${ts - 2}px "Lora", Georgia, serif`, C.ink, nx, by + k * ts * 1.25)); }
+    y += o.h + gap;
   });
-  x.fillStyle = ink; x.font = '800 44px "Inter", sans-serif'; x.fillText("SecondReading.org", L, H - 62);
-  x.fillStyle = soft; x.font = 'italic 400 28px "Lora", Georgia, serif'; x.textAlign = "right"; x.fillText("Kokomo and Howard County", R, H - 64); x.textAlign = "left";
 }
 
 function styleForm() {
