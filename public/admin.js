@@ -820,65 +820,105 @@ function bookmarklet(origin) {
 route();
 
 // ---------- Posts: Facebook drafts from the public record
+// Tabs: Ideas (what's worth posting), Drafts (list + one open editor), Posted (compact history), Style.
 let PO = null; // posts overview cache
 const PCOST = "about 1–2¢";
-async function viewPosts() {
-  PO = await api("posts");
-  const v = $("#view");
-  const sug = PO.suggestions;
-  const typeOpts = Object.entries(PO.types).map(([k, t]) => `<option value="${k}">${esc(t.label)}</option>`).join("");
-  v.innerHTML = `<h1>Posts</h1>
-    <p class="muted">Suggestions are free. Drafting or changing a post costs ${PCOST}. Drafts only use what's public on the site.</p>
-    <h2>Worth posting now</h2>
-    <div class="card posts-sug">${sug.length ? sug.map((s, i) => `<div class="ps-row">
-      <div><span class="lbl">${esc(s.label)}</span> <b>${esc(s.title)}</b><div class="meta">${esc(s.why)}</div></div>
-      <div class="actions">${s.posted ? `<span class="yes">Posted</span>` : ""}${s.drafted ? `<button data-see="d-${esc(s.key.replace(/[^\w-]/g, "_"))}">See draft</button>` : `<button class="primary" data-sug="${i}">Draft</button>`}</div></div>`).join("") : `<p class="muted">Nothing new right now.</p>`}</div>
-    <h2>Draft a post</h2>
-    <div class="card"><div class="row">
-      <div><label>Type</label><select id="pType">${typeOpts}</select></div>
-      <div class="grow"><label>About</label><select id="pRef"></select></div>
-      <div style="flex:0 0 auto"><button class="primary" id="pGo">Draft (${PCOST})</button></div>
-    </div></div>
-    <h2>Drafts</h2>
-    <div id="pDrafts">${PO.drafts.length ? "" : `<p class="muted">No drafts yet.</p>`}</div>
-    <h2>Style</h2>
-    <div class="card" id="pStyle"></div>
-    <h2>Posted</h2>
-    <div class="card">${PO.log.length ? PO.log.map((l) => `<div class="ps-row"><div><span class="lbl">${esc(PO.types[l.type]?.label || l.type)}</span> ${esc(fmtDate(l.at.slice(0, 10)))}<div class="meta">${esc(l.text)}</div></div><div><button class="linkish" data-unpost="${esc(l.key)}">Undo</button></div></div>`).join("") : `<p class="muted">Nothing marked as posted yet.</p>`}</div>`;
+let POST_TAB = sessionStorage.getItem("posts-tab") || "";
+let POST_SEL = null; // key of the open draft or posted item
+const OLD_DAYS = 14;
+const narrow = () => window.matchMedia("(max-width: 800px)").matches;
+const ago = (iso) => { const d = (Date.now() - Date.parse(iso)) / 864e5; return d < 1 ? "today" : d < 2 ? "yesterday" : `${Math.floor(d)} days ago`; };
+const draftTitle = (d) => d?.card?.headline || (d?.text || "").split("\n")[0].slice(0, 90);
 
+async function viewPosts(opts = {}) {
+  if (!opts.keep || !PO) PO = await api("posts");
+  if (opts.tab) POST_TAB = opts.tab;
+  if (opts.sel !== undefined) POST_SEL = opts.sel;
+  const postedKeys = new Set(PO.log.map((l) => l.key));
+  const open = PO.drafts.filter((d) => !postedKeys.has(d.key));
+  if (!POST_TAB) POST_TAB = open.length ? "drafts" : "ideas";
+  sessionStorage.setItem("posts-tab", POST_TAB);
+  const ideas = PO.suggestions.filter((s) => !s.posted);
+  const tabs = [["ideas", `Ideas (${ideas.length})`], ["drafts", `Drafts (${open.length})`], ["posted", `Posted (${PO.log.length})`], ["style", "Style"]];
+  const v = $("#view");
+  v.innerHTML = `<div class="ptop"><h1>Posts</h1><div class="ptabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" class="${POST_TAB === k ? "on" : ""}" data-tab="${k}">${l}</button>`).join("")}</div></div><div id="pbody"></div>`;
+  v.querySelectorAll("[data-tab]").forEach((b) => b.onclick = () => viewPosts({ keep: true, tab: b.dataset.tab, sel: null }));
+  const body = $("#pbody");
+  if (POST_TAB === "ideas") return ideasTab(body, ideas);
+  if (POST_TAB === "drafts") return draftsTab(body, open);
+  if (POST_TAB === "posted") return postedTab(body);
+  body.innerHTML = `<div class="card" id="pStyle"></div>`; styleForm();
+}
+
+function ideasTab(body, ideas) {
+  const typeOpts = Object.entries(PO.types).map(([k, t]) => `<option value="${k}">${esc(t.label)}</option>`).join("");
+  const drafted = new Map(PO.drafts.map((d) => [d.key, d]));
+  body.innerHTML = `<div class="card pmake"><div class="row">
+      <div><label>Draft a post</label><select id="pType">${typeOpts}</select></div>
+      <div class="grow"><label>About</label><select id="pRef"></select></div>
+      <div style="flex:0 0 auto"><button class="primary" id="pGo">Draft (${PCOST})</button></div></div></div>
+    <p class="muted">Worth posting now. Suggestions are free; drafting costs ${PCOST}.</p>
+    <div class="card plist">${ideas.length ? ideas.map((s, i) => `<div class="ps-row">
+      <div><span class="lbl">${esc(s.label)}</span> <b>${esc(s.title)}</b><div class="meta">${esc(s.why)}</div></div>
+      <div class="actions">${drafted.has(s.key) ? `<button data-open="${esc(s.key)}">Open draft</button>` : `<button class="primary" data-sug="${i}">Draft</button>`}</div></div>`).join("") : `<p class="muted">Nothing new right now.</p>`}</div>`;
   const refsFor = (type) => type === "headsup" ? PO.targets.upcoming : type === "second" ? PO.targets.issues : type === "numbers" ? PO.targets.amounts : type === "explain" ? PO.targets.kinds : [{ ref: new Date(Date.now() - 4 * 3600e3).toISOString().slice(0, 10), label: type === "week" ? "The next seven days" : "The past seven days" }];
   const fillRefs = () => { const list = refsFor($("#pType").value); $("#pRef").innerHTML = list.length ? list.map((r) => `<option value="${esc(r.ref)}">${esc(r.label)}</option>`).join("") : `<option value="">Nothing to pick</option>`; };
   $("#pType").onchange = fillRefs; fillRefs();
   $("#pGo").onclick = async (e) => { const ref = $("#pRef").value; if (!ref) return toast("Nothing to draft for that type yet."); await runDraft(e.target, { type: $("#pType").value, ref }); };
-  v.querySelectorAll("[data-sug]").forEach((b) => b.onclick = async () => { const s = sug[+b.dataset.sug]; await runDraft(b, { type: s.type, ref: s.ref, key: s.key }); });
-  v.querySelectorAll("[data-see]").forEach((b) => b.onclick = () => document.getElementById(b.dataset.see)?.scrollIntoView({ behavior: "smooth", block: "start" }));
-  v.querySelectorAll("[data-unpost]").forEach((b) => b.onclick = async () => { await api("postMark", { key: b.dataset.unpost, on: false }); viewPosts(); });
+  body.querySelectorAll("[data-sug]").forEach((b) => b.onclick = async () => { const s = ideas[+b.dataset.sug]; await runDraft(b, { type: s.type, ref: s.ref, key: s.key }); });
+  body.querySelectorAll("[data-open]").forEach((b) => b.onclick = () => viewPosts({ keep: true, tab: "drafts", sel: b.dataset.open }));
+}
 
-  const box = $("#pDrafts");
-  PO.drafts.forEach((d) => box.append(draftCard(d)));
-  styleForm();
-  if (location.hash === "#/posts" && sessionStorage.getItem("posts-jump")) { const id = sessionStorage.getItem("posts-jump"); sessionStorage.removeItem("posts-jump"); document.getElementById(id)?.scrollIntoView({ block: "start" }); }
+// A list on the left, the open item on the right. On a phone: the list, or the open item with a way back.
+function splitView(body, rowsHtml, emptyHtml, openEl, backLabel) {
+  if (narrow() && openEl) {
+    body.innerHTML = `<button class="linkish pback">← ${esc(backLabel)}</button><div id="pOpen"></div>`;
+    $(".pback", body).onclick = () => viewPosts({ keep: true, sel: "" });
+    $("#pOpen", body).append(openEl);
+    return;
+  }
+  body.innerHTML = `<div class="psplit"><div class="card plist pside">${rowsHtml || emptyHtml}</div><div id="pOpen">${openEl ? "" : `<p class="muted">Pick one from the list.</p>`}</div></div>`;
+  if (openEl) $("#pOpen", body).append(openEl);
+}
+
+function draftsTab(body, open) {
+  const fresh = open.filter((d) => Date.now() - Date.parse(d.at) < OLD_DAYS * 864e5), old = open.filter((d) => !fresh.includes(d));
+  if (POST_SEL === null) POST_SEL = narrow() ? "" : (fresh[0] || old[0])?.key || "";
+  const sel = open.find((d) => d.key === POST_SEL);
+  const row = (d) => `<button class="prow ${d.key === POST_SEL ? "on" : ""}" data-sel="${esc(d.key)}"><span class="lbl">${esc(d.label)}</span><b>${esc(draftTitle(d))}</b><span class="meta">${esc(ago(d.at))}${d.checks?.length ? " · check before posting" : ""}</span></button>`;
+  const rows = fresh.map(row).join("") + (old.length ? `<details class="pold" ${old.some((d) => d.key === POST_SEL) ? "open" : ""}><summary>Older drafts (${old.length})</summary>${old.map(row).join("")}</details>` : "");
+  splitView(body, rows, `<p class="muted">No drafts. Start one from Ideas.</p>`, sel ? draftCard(sel, false) : null, "All drafts");
+  body.querySelectorAll("[data-sel]").forEach((b) => b.onclick = () => viewPosts({ keep: true, sel: b.dataset.sel }));
+}
+
+function postedTab(body) {
+  const byKey = new Map(PO.drafts.map((d) => [d.key, d]));
+  if (POST_SEL === null) POST_SEL = "";
+  const sel = POST_SEL ? byKey.get(POST_SEL) : null;
+  const rows = PO.log.map((l) => { const d = byKey.get(l.key); return `<button class="prow pposted ${l.key === POST_SEL ? "on" : ""}" data-sel="${esc(l.key)}" ${d ? "" : "disabled"}>${d ? `<canvas width="1080" height="1350" data-thumb="${esc(l.key)}"></canvas>` : `<span class="pthumb-none"></span>`}<span class="ptxt"><span class="lbl">${esc(PO.types[l.type]?.label || l.type)}</span><b>${esc(d ? draftTitle(d) : l.text.split("\n")[0])}</b><span class="meta">Posted ${esc(fmtDate(l.at.slice(0, 10)))}${d ? "" : " · draft no longer kept"}</span></span></button>`; }).join("");
+  splitView(body, rows, `<p class="muted">Nothing marked as posted yet.</p>`, sel ? draftCard(sel, true) : null, "All posted");
+  body.querySelectorAll("[data-thumb]").forEach((cv) => drawCard(cv, byKey.get(cv.dataset.thumb).card));
+  body.querySelectorAll("[data-sel]").forEach((b) => b.onclick = () => viewPosts({ keep: true, sel: b.dataset.sel }));
 }
 
 async function runDraft(btn, body) {
   const old = btn.textContent; btn.disabled = true; btn.textContent = "Writing…";
-  try { const { draft } = await api("postDraft", body); toast(`Drafted (${draft.cents}¢).`); sessionStorage.setItem("posts-jump", "d-" + draft.key.replace(/[^\w-]/g, "_")); await viewPosts(); }
+  try { const { draft } = await api("postDraft", body); toast(`Drafted (${draft.cents}¢).`); await viewPosts({ tab: "drafts", sel: draft.key }); }
   catch (e) { btn.disabled = false; btn.textContent = old; toast(e.message, 6000); }
 }
 
-function draftCard(d) {
+function draftCard(d, posted) {
   const el = document.createElement("div");
-  el.className = "card pdraft"; el.id = "d-" + d.key.replace(/[^\w-]/g, "_");
-  const posted = PO.log.some((l) => l.key === d.key);
+  el.className = "card pdraft";
   el.innerHTML = `<div class="pd-head"><div><span class="lbl">${esc(d.label)}</span> <span class="meta">${esc(new Date(d.at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }))} · ${d.cents}¢${d.tweak ? ` · changed: ${esc(d.tweak)}` : ""}</span></div>${posted ? `<span class="yes">Posted</span>` : ""}</div>
-    ${d.checks?.length ? `<div class="check"><b>Check before posting:</b><ul>${d.checks.map((c) => `<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}
+    ${d.checks?.length && !posted ? `<div class="check"><b>Check before posting:</b><ul>${d.checks.map((c) => `<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}
     <div class="pd-body">
       <div class="pd-text"><textarea rows="14">${esc(d.text)}</textarea>
         <div class="meta pd-count"></div>
-        <div class="actions"><button class="primary" data-a="copy">Copy</button>
-          <button data-t="Make it shorter">Shorter</button><button data-t="Make it a bit longer, with one more useful detail from the facts">Longer</button><button data-t="Simpler words, shorter sentences">Simpler</button><button data-t="Write a fresh version">Redo</button></div>
-        <div class="row" style="margin-top:.5rem"><div class="grow"><input placeholder="Change just this post, e.g. lead with the jail" data-own></div><div style="flex:0 0 auto"><button data-a="own">Change (${PCOST})</button></div></div>
-        <div class="actions" style="margin-top:.6rem"><button data-a="posted">${posted ? "Mark not posted" : "Mark posted"}</button><button class="danger" data-a="del">Delete</button></div>
+        <div class="actions"><button class="primary" data-a="copy">Copy</button>${posted ? "" : `
+          <button data-t="Make it shorter">Shorter</button><button data-t="Make it a bit longer, with one more useful detail from the facts">Longer</button><button data-t="Simpler words, shorter sentences">Simpler</button><button data-t="Write a fresh version">Redo</button>`}</div>
+        ${posted ? "" : `<div class="row" style="margin-top:.5rem"><div class="grow"><input placeholder="Change just this post, e.g. lead with the jail" data-own></div><div style="flex:0 0 auto"><button data-a="own">Change (${PCOST})</button></div></div>`}
+        <div class="actions" style="margin-top:.6rem"><button data-a="posted">${posted ? "Move back to drafts" : "Mark posted"}</button>${posted ? "" : `<button class="danger" data-a="del">Delete</button>`}</div>
       </div>
       <div class="pd-img"><canvas width="1080" height="1350"></canvas><div class="actions"><button data-a="png">Download image</button></div></div>
     </div>`;
@@ -887,12 +927,12 @@ function draftCard(d) {
   ta.oninput = count; count();
   const canvas = $("canvas", el);
   drawCard(canvas, d.card);
-  const tweak = async (btn, t) => { const old = btn.textContent; btn.disabled = true; btn.textContent = "Writing…"; try { const { draft } = await api("postDraft", { type: d.type, ref: d.ref, key: d.key, tweak: t, current: ta.value }); toast(`Changed (${draft.cents}¢).`); sessionStorage.setItem("posts-jump", el.id); await viewPosts(); } catch (e) { btn.disabled = false; btn.textContent = old; toast(e.message, 6000); } };
+  const tweak = async (btn, t) => { const old = btn.textContent; btn.disabled = true; btn.textContent = "Writing…"; try { const { draft } = await api("postDraft", { type: d.type, ref: d.ref, key: d.key, tweak: t, current: ta.value }); toast(`Changed (${draft.cents}¢).`); await viewPosts({ sel: d.key }); } catch (e) { btn.disabled = false; btn.textContent = old; toast(e.message, 6000); } };
   el.querySelectorAll("[data-t]").forEach((b) => b.onclick = () => tweak(b, b.dataset.t));
-  el.querySelector('[data-a="own"]').onclick = (e) => { const t = $("[data-own]", el).value.trim(); if (!t) return toast("Say what to change."); tweak(e.target, t); };
+  el.querySelector('[data-a="own"]')?.addEventListener("click", (e) => { const t = $("[data-own]", el).value.trim(); if (!t) return toast("Say what to change."); tweak(e.target, t); });
   el.querySelector('[data-a="copy"]').onclick = async () => { try { await navigator.clipboard.writeText(ta.value); toast("Copied. Paste it into Facebook."); } catch (e) { ta.select(); document.execCommand("copy"); toast("Copied."); } };
-  el.querySelector('[data-a="posted"]').onclick = async () => { await api("postMark", { key: d.key, on: !posted }); sessionStorage.setItem("posts-jump", el.id); viewPosts(); };
-  el.querySelector('[data-a="del"]').onclick = async () => { if (!confirm("Delete this draft?")) return; await api("postDelete", { key: d.key }); viewPosts(); };
+  el.querySelector('[data-a="posted"]').onclick = async () => { await api("postMark", { key: d.key, on: !posted }); toast(posted ? "Back in Drafts." : "Moved to Posted."); await viewPosts({ sel: null }); };
+  el.querySelector('[data-a="del"]')?.addEventListener("click", async () => { if (!confirm("Delete this draft?")) return; await api("postDelete", { key: d.key }); await viewPosts({ sel: null }); });
   el.querySelector('[data-a="png"]').onclick = () => { const a = document.createElement("a"); a.download = `second-reading-${d.key.replace(/[^\w-]+/g, "-")}.png`; a.href = canvas.toDataURL("image/png"); a.click(); };
   return el;
 }
