@@ -10,7 +10,7 @@ import { classifyIssue, KINDS } from "../lib/roadmaps.js";
 import { videoInventory } from "../lib/live.js";
 import { CHANNELS } from "../lib/county.js";
 import { json, fail, isAdmin } from "../lib/http.js";
-import { postsOverview, draftPost, markPosted, deleteDraft, saveStyle, tryStyle, suggestions } from "../lib/posts.js";
+import { postsOverview, draftPost, markPosted, deleteDraft, saveStyle, tryStyle, suggestions, dismissIdea } from "../lib/posts.js";
 import { calendar } from "../lib/public.js";
 import { today as todayDate } from "../lib/pipeline.js";
 
@@ -167,7 +167,7 @@ export async function POST(request) {
       case "askConfig": { const cfg = { monthlyCents: Math.max(0, Math.round(+p.monthlyCents || 0)), dailyCents: Math.max(0, Math.round(+p.dailyCents || 0)) }; await setJSON("config:ask", cfg); return json({ config: cfg }); }
       case "counts": {
         const [n, ideas] = await Promise.all([needsYou(), suggestions().catch(() => [])]);
-        return json({ needsYou: n.held.length + n.reports.length + n.broken.length, ideas: ideas.filter((x) => !x.posted && !x.drafted).length });
+        return json({ needsYou: n.held.length + n.reports.length + n.broken.length, ideas: ideas.filter((x) => !x.posted && !x.drafted && !x.dismissed).length });
       }
       case "today": {
         const t = todayDate();
@@ -181,13 +181,14 @@ export async function POST(request) {
           problems: sl.filter((m) => m.status === "error" || m.previewError).map((m) => ({ id: m.id, body: m.body, date: m.date, error: m.error || m.previewError })),
           ready: sl.filter((m) => m.ready).map((m) => ({ id: m.id, body: m.body, date: m.date })),
           unsorted: videos.filter((v) => !v.meetingId && !["other", "budget"].includes(v.body)).length,
-          ideas: ideas.filter((x) => !x.posted).slice(0, 4), ideaCount: ideas.filter((x) => !x.posted && !x.drafted).length,
+          ideas: ideas.filter((x) => !x.posted && !x.dismissed).slice(0, 4), ideaCount: ideas.filter((x) => !x.posted && !x.drafted && !x.dismissed).length,
           upcoming: cal.meetings.filter((m) => !m.past && m.date >= t && m.date <= plus7).slice(0, 8).map((m) => ({ id: m.id, body: m.body, bodyName: m.bodyName, date: m.date, time: m.time, state: m.state, cancelled: m.cancelled, maybeCanceled: m.maybeCanceled, items: (m.items || []).length })),
         });
       }
       case "posts": return json(await postsOverview());
       case "postDraft": return json({ draft: await draftPost({ type: p.type, ref: p.ref, key: p.key, tweak: String(p.tweak || "").slice(0, 400), current: String(p.current || "").slice(0, 6000) }) });
       case "postMark": return json(await markPosted(p.key, p.on !== false));
+      case "postDismiss": return json(await dismissIdea(String(p.key || ""), p.on !== false));
       case "postDelete": return json(await deleteDraft(p.key));
       case "postStyle": return json({ style: await saveStyle(p.style || {}) });
       case "postTry": return json({ draft: await tryStyle(p.style || {}) });
