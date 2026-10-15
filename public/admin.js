@@ -488,17 +488,95 @@ async function viewIssues() {
   const { issues, kinds = [] } = await api("issues");
   issues.sort((a, b) => (b.lastDate || "").localeCompare(a.lastDate || ""));
   const kindSel = (i) => `<select data-kind="${esc(i.key)}" title="Which road this issue is on (sets the public page's roadmap)"><option value="" ${!i.kindOverride ? "selected" : ""}>Auto${i.guessed ? `: ${esc(kinds.find((k) => k.kind === i.guessed)?.label || i.guessed)}` : ": no roadmap"}</option>${kinds.map((k) => `<option value="${k.kind}" ${i.kindOverride === k.kind ? "selected" : ""}>${esc(k.label)}</option>`).join("")}<option value="none" ${i.kindOverride === "none" ? "selected" : ""}>No roadmap</option></select>`;
+  const dupes = await api("dupes");
   $("#view").innerHTML = `
     <h1>Issues</h1>
     <p class="muted">Every published item with an issue key lands on that issue's timeline; these are the public issue pages. Each issue is put on a "road" (rezoning, variance, appropriation…) automatically from its items; fix one with the dropdown. <button id="rebuild">Rebuild all timelines</button></p>
+    <div id="dupes">${dupesHtml(dupes)}</div>
+    <datalist id="issueKeys">${issues.map((i) => `<option value="${esc(i.key)}">${esc(i.title)}</option>`).join("")}</datalist>
     ${issues.length ? issues.map((i) => `<div class="card item">
-      <div class="head"><h3>${esc(i.title)}</h3><span class="meta">${esc(i.key)}</span></div>
-      <div class="row" style="align-items:center;gap:.5rem;margin:.3rem 0 .5rem"><span class="muted">Road:</span>${kindSel(i)}</div>
+      <div class="head"><h3>${esc(i.title)}</h3><span class="meta">${esc(i.key)}${i.aliases?.length ? ` · also ${i.aliases.map(esc).join(", ")}` : ""}</span></div>
+      <div class="row" style="align-items:center;gap:.5rem;margin:.3rem 0 .5rem;flex-wrap:wrap"><span class="muted">Road:</span>${kindSel(i)} <span class="muted" style="margin-left:.6rem">Merge into:</span><input list="issueKeys" data-merge="${esc(i.key)}" placeholder="other issue key" style="width:16rem">${i.related?.length ? `<span class="muted" style="margin-left:.6rem">Related: ${i.related.map((k) => `<a href="#/issues">${esc(k)}</a>`).join(", ")}</span>` : ""}</div>
       ${i.events.map((ev) => `<div class="issue-ev">${fmtDate(ev.date)} · ${BODY_NAMES[ev.body]} · <strong>${esc(ev.stage)}</strong>${ev.result && ev.result !== "no vote" ? ` (${esc(ev.result)})` : ""} · <a href="#/m/${encodeURIComponent(ev.meetingId)}">${esc(ev.title)}</a>${ev.amount != null ? ` · ${money(ev.amount)}` : ""}</div>`).join("")}
       ${i.nextStep?.text ? `<p><strong>Next:</strong> ${esc(i.nextStep.text)}${i.nextStep.date ? ` (${fmtDate(i.nextStep.date)})` : ""}</p>` : ""}
     </div>`).join("") : `<p class="muted">No issues yet. Click Rebuild if you have published meetings.</p>`}`;
   $("#rebuild").onclick = async () => { const r = await api("rebuildIssues"); toast(`Rebuilt ${r.issues} issues.`); viewIssues(); };
-  $("#view").onchange = async (e) => { const t = e.target.closest("[data-kind]"); if (!t) return; await api("issueKind", { key: t.dataset.kind, kind: t.value }); toast("Saved."); };
+  $("#view").onchange = async (e) => {
+    const t = e.target.closest("[data-kind]");
+    if (t) { await api("issueKind", { key: t.dataset.kind, kind: t.value }); toast("Saved."); return; }
+    const mg = e.target.closest("[data-merge]");
+    if (mg && mg.value.trim()) {
+      const into = mg.value.trim(), from = mg.dataset.merge;
+      if (!issues.some((i) => i.key === into)) { toast("No issue with that key."); return; }
+      if (!confirm(`Move everything on "${from}" onto "${into}"? "${from}" becomes an alias and its page redirects.`)) { mg.value = ""; return; }
+      try { const r = await api("dupeMerge", { into, from }); toast(`Merged: ${r.title} now has ${r.events} items.`); viewIssues(); } catch (err) { toast(err.message); }
+    }
+  };
+  wireDupes();
+}
+
+// ---- Duplicate issues: scan, then clear the queue
+function dupesHtml(d) {
+  const pair = (p) => `<div class="card" style="padding:.6rem .8rem;margin:.4rem 0" data-pair="${esc(p.a)}|${esc(p.b)}">
+    <div class="row" style="gap:1rem;flex-wrap:wrap;align-items:baseline">
+      <div style="flex:1 1 16rem"><strong>${esc(p.A.title)}</strong><div class="meta">${esc(p.a)} · ${p.A.items} items · ${esc(p.A.from || "")} → ${esc(p.A.to || "")}</div></div>
+      <div style="flex:1 1 16rem"><strong>${esc(p.B.title)}</strong><div class="meta">${esc(p.b)} · ${p.B.items} items · ${esc(p.B.from || "")} → ${esc(p.B.to || "")}</div></div>
+    </div>
+    <div class="muted" style="margin:.3rem 0">${p.verdict ? `<strong>${esc(p.verdict)}</strong> (${esc(p.confidence)}): ${esc(p.reason || "")}` : esc(p.reasons.join("; "))}${p.error ? ` <span class="err">${esc(p.error)}</span>` : ""}</div>
+    <div class="row" style="gap:.4rem;flex-wrap:wrap">
+      <button data-act="merge" data-into="${esc(p.keep || p.a)}" data-from="${esc(p.keep === p.b ? p.a : p.b)}">Merge → keep ${esc(p.keep || p.a)}</button>
+      <button data-act="merge" data-into="${esc(p.keep === p.b ? p.a : p.b)}" data-from="${esc(p.keep || p.a)}" class="ghost">Merge → keep ${esc(p.keep === p.b ? p.a : p.b)}</button>
+      <button data-act="relate" class="ghost">Related, not the same</button>
+      <button data-act="dismiss" class="ghost">Not the same</button>
+    </div></div>`;
+  const review = d.review || [];
+  return `<div class="card" style="margin:.8rem 0 1.2rem;padding:.8rem 1rem">
+    <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">
+      <h3 style="margin:0">Possible duplicates${review.length ? ` <span class="meta">${review.length} to look at</span>` : ""}${d.pending ? ` <span class="meta">${d.pending} still to check</span>` : ""}</h3>
+      <div class="row" style="gap:.4rem"><button id="dupeScan">${d.pending ? "Keep checking" : "Scan for duplicates"}</button>${review.length > 1 ? `<button id="dupeAll" class="ghost">Merge all suggested</button>` : ""}${d.pending || review.length ? "" : `<button id="dupeRestart" class="ghost">Scan again</button>`}</div>
+    </div>
+    <p class="muted" style="margin:.3rem 0 .6rem">Looks for issues that are one matter under two keys (same project, same ordinance number, same address), asks Claude to confirm, merges the sure ones on its own and leaves the rest here. A merged key becomes an alias, so old links and future drafts still land on the one page.</p>
+    <div id="dupeLog" class="muted"></div>
+    ${review.length ? review.map(pair).join("") : d.pending ? "" : `<p class="muted" style="margin:0">Nothing waiting for you.${d.done ? ` ${d.done} pairs settled so far.` : ""}</p>`}
+    ${d.recent?.length ? `<details style="margin-top:.6rem"><summary>Settled automatically (${d.recent.length})</summary>${d.recent.map((p) => `<div class="issue-ev">${p.status === "merged" ? `Merged <strong>${esc(p.a === p.into ? p.b : p.a)}</strong> into <strong>${esc(p.into)}</strong>` : `Linked <strong>${esc(p.a)}</strong> and <strong>${esc(p.b)}</strong> as related`} · ${esc(p.reason || "")}</div>`).join("")}</details>` : ""}
+  </div>`;
+}
+function wireDupes() {
+  const box = $("#dupes"); if (!box) return;
+  const refresh = async () => { box.innerHTML = dupesHtml(await api("dupes")); wireDupes(); };
+  const log = (t) => { const l = $("#dupeLog"); if (l) l.textContent = t; };
+  const scan = async (restart = false) => {
+    const btn = $("#dupeScan"); if (btn) { btn.disabled = true; btn.textContent = "Checking…"; }
+    let guard = 0;
+    try {
+      let r = await api("dupeScan", { restart });
+      let applied = r.applied || [];
+      while (r.queue && r.queue.pending > 0 && !r.error && guard++ < 40) { log(`${r.queue.pending} pairs still to check; ${applied.length} settled so far…`); r = await api("dupeScan"); applied = applied.concat(r.applied || []); }
+      if (r.error) toast(r.error, 6000);
+      const merged = applied.filter((a) => a.kind === "merged").length, related = applied.filter((a) => a.kind === "related").length;
+      toast(`Done. Merged ${merged}, linked ${related} as related, ${r.queue?.review?.length || 0} for you to look at.`, 6000);
+    } catch (e) { toast(e.message, 6000); }
+    await refresh();
+  };
+  $("#dupeScan")?.addEventListener("click", () => scan(false));
+  $("#dupeRestart")?.addEventListener("click", () => scan(true));
+  $("#dupeAll")?.addEventListener("click", async () => {
+    const pairs = [...box.querySelectorAll("[data-pair]")].map((el) => ({ el, btn: el.querySelector('[data-act="merge"]') })).filter((x) => x.btn);
+    if (!confirm(`Merge all ${pairs.length} suggested pairs, keeping the first key shown on each?`)) return;
+    for (const { btn } of pairs) { try { await api("dupeMerge", { into: btn.dataset.into, from: btn.dataset.from }); } catch (e) { toast(e.message); } }
+    toast("Merged."); await refresh();
+  });
+  box.addEventListener("click", async (e) => {
+    const b = e.target.closest("button[data-act]"); if (!b) return;
+    const el = b.closest("[data-pair]"); const [a, c] = el.dataset.pair.split("|");
+    b.disabled = true;
+    try {
+      if (b.dataset.act === "merge") { const r = await api("dupeMerge", { into: b.dataset.into, from: b.dataset.from }); toast(`Merged into ${r.key}: ${r.events} items.`); }
+      else if (b.dataset.act === "relate") { await api("dupeRelate", { a, b: c }); toast("Linked as related."); }
+      else { await api("dupeDismiss", { a, b: c }); toast("Won't ask again."); }
+      el.remove();
+    } catch (err) { toast(err.message, 5000); b.disabled = false; }
+  });
 }
 
 

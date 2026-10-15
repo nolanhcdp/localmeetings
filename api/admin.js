@@ -7,6 +7,7 @@ import { listMembers, createMember, updateMember, askConfig, askLog, spendStatus
 import { BODIES, GLOSSARY } from "../lib/county.js";
 import { subCount, broadcast, pushReady, prefStats } from "../lib/push.js";
 import { classifyIssue, KINDS } from "../lib/roadmaps.js";
+import { dupeScan, dupeQueue, mergeIssues, relateIssues, dismiss, settlePair } from "../lib/issues.js";
 import { videoInventory } from "../lib/live.js";
 import { CHANNELS } from "../lib/county.js";
 import { json, fail, isAdmin } from "../lib/http.js";
@@ -101,6 +102,13 @@ export async function POST(request) {
         if (p.kind) i.kindOverride = p.kind; else delete i.kindOverride;
         await saveIssue(i); return json({ kind: classifyIssue(i) });
       }
+      // Duplicate issues: scan (repeat until pending is 0), then merge / link / dismiss what's left
+      case "dupes": return json(await dupeQueue());
+      case "dupeScan": return json(await dupeScan({ restart: !!p.restart, batch: Number(p.batch) || 20 }));
+      case "dupeMerge": { if (!p.into || !p.from) return fail("Need into and from"); const i = await mergeIssues(p.into, p.from); await settlePair(p.into, p.from, "merged", i.key); return json({ ok: true, key: i.key, title: i.title, events: i.events.length }); }
+      case "dupeRelate": { if (!p.a || !p.b) return fail("Need a and b"); await relateIssues(p.a, p.b, p.on !== false); await settlePair(p.a, p.b, p.on !== false ? "related" : "dismissed"); return json({ ok: true }); }
+      case "dupeDismiss": { if (!p.a || !p.b) return fail("Need a and b"); await dismiss(p.a, p.b, "admin"); return json({ ok: true }); }
+      case "issueTitle": { const issues = await listIssues(); const i = issues.find((x) => x.key === p.key); if (!i) return fail("No such issue"); i.title = String(p.title || "").trim() || i.title; await saveIssue(i); return json({ ok: true }); }
       case "import": return json({ ok: true, done: await importFiles(p.files || []) });
       case "releasePrivacyHolds": return json(await releasePrivacyHolds());
       case "refs": return json({ refs: (await listRefs()).map(({ funds, generalFundDepartments, otherPropertyTaxDepartments, ...r }) => r) });

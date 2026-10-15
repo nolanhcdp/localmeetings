@@ -295,7 +295,7 @@ td.num, th.num { text-align: right; white-space: nowrap; font-variant-numeric: t
 
 /* roadmap (issue pages) */
 .status { display: flex; gap: 10px; align-items: center; padding: 14px 18px; border-left: 6px solid var(--gold); }
-.status.done { border-left-color: var(--pass); } .status.failed { border-left-color: var(--fail); } .status.stalled { border-left-color: var(--none); }
+.status.done { border-left-color: var(--pass); } .status.failed { border-left-color: var(--fail); } .status.stalled { border-left-color: var(--none); } .status.underway { border-left-color: var(--board, var(--link)); }
 .status b { font-family: var(--display); font-size: 1.3rem; display: block; }
 .road { padding: 18px 22px; }
 .rstep { display: grid; grid-template-columns: 28px 1fr; gap: 0 16px; position: relative; padding-bottom: 18px; }
@@ -307,6 +307,12 @@ td.num, th.num { text-align: right; white-space: nowrap; font-variant-numeric: t
 .rstep.done .n { background: var(--pass); }
 .rstep.next .n { background: var(--gold); color: #1c1c1c; }
 .rstep.later .n, .rstep.missed .n { background: var(--panel); border: 2px dashed var(--faint); color: var(--faint); }
+.rstep.ongoing .n { background: var(--board, var(--link)); box-shadow: 0 0 0 3px var(--panel), 0 0 0 5px var(--board, var(--link)); font-size: .8rem; }
+.rstep.ongoing::before { background: var(--board, var(--link)); }
+.rstep .tally { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 10px; }
+.rstep .tally .fact { padding: 10px 12px; }
+.rstep .tally .fact b { font-size: 1.45rem; }
+.rstep .tally .fact span { display: block; margin-top: 2px; line-height: 1.3; }
 .rstep .t { font-weight: 700; font-size: 1.08rem; }
 .rstep .who { color: var(--faint); font-size: .9rem; }
 .rstep p { margin: 4px 0 0; color: var(--soft); }
@@ -324,6 +330,7 @@ td.num, th.num { text-align: right; white-space: nowrap; font-variant-numeric: t
 .steps .l.next { padding: 0; margin: 0; background: none; }
 .steps .s.later { background: none; border: 2px dashed var(--faint); }
 .steps .s.missed { background: none; border: 2px solid var(--line); }
+.steps .s.ongoing { background: var(--board, var(--none)); box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--board, var(--none)); }
 
 /* timeline */
 .timeline { list-style: none; padding: 0; margin: 0; }
