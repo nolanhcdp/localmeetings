@@ -904,7 +904,7 @@ async function viewPosts(opts = {}) {
   const open = PO.drafts.filter((d) => !postedKeys.has(d.key));
   if (!POST_TAB) POST_TAB = open.length ? "drafts" : "ideas";
   sessionStorage.setItem("posts-tab", POST_TAB);
-  const ideas = PO.suggestions.filter((s) => !s.posted);
+  const ideas = PO.suggestions.filter((s) => !s.posted && !s.dismissed);
   const tabs = [["ideas", `Ideas (${ideas.length})`], ["drafts", `Drafts (${open.length})`], ["posted", `Posted (${PO.log.length})`], ["style", "Style"]];
   const v = $("#view");
   v.innerHTML = `<div class="ptop"><h1>Posts</h1><div class="ptabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" class="${POST_TAB === k ? "on" : ""}" data-tab="${k}">${l}</button>`).join("")}</div></div><div id="pbody"></div>`;
@@ -917,6 +917,7 @@ async function viewPosts(opts = {}) {
 }
 
 function ideasTab(body, ideas) {
+  const hidden = PO.suggestions.filter((s) => s.dismissed && !s.posted);
   const typeOpts = Object.entries(PO.types).map(([k, t]) => `<option value="${k}">${esc(t.label)}</option>`).join("");
   const drafted = new Map(PO.drafts.map((d) => [d.key, d]));
   body.innerHTML = `<div class="card pmake"><div class="row">
@@ -926,13 +927,15 @@ function ideasTab(body, ideas) {
     <p class="muted">Worth posting now. Suggestions are free; drafting costs ${PCOST}.</p>
     <div class="card plist">${ideas.length ? ideas.map((s, i) => `<div class="ps-row">
       <div><span class="lbl">${esc(s.label)}</span> <b>${esc(s.title)}</b><div class="meta">${esc(s.why)}</div></div>
-      <div class="actions">${drafted.has(s.key) ? `<button data-open="${esc(s.key)}">Open draft</button>` : `<button class="primary" data-sug="${i}">Draft</button>`}</div></div>`).join("") : `<p class="muted">Nothing new right now.</p>`}</div>`;
+      <div class="actions"><button class="linkish" data-dismiss="${esc(s.key)}" title="Hide this idea">Not posting</button>${drafted.has(s.key) ? `<button data-open="${esc(s.key)}">Open draft</button>` : `<button class="primary" data-sug="${i}">Draft</button>`}</div></div>`).join("") : `<p class="muted">Nothing new right now.</p>`}</div>
+    ${hidden.length ? `<details class="pold"><summary>Not posting (${hidden.length})</summary><div class="card plist">${hidden.map((s) => `<div class="ps-row"><div><span class="lbl">${esc(s.label)}</span> <span class="muted">${esc(s.title)}</span></div><div class="actions"><button class="linkish" data-undismiss="${esc(s.key)}">Bring back</button></div></div>`).join("")}</div></details>` : ""}`;
   const refsFor = (type) => type === "headsup" ? PO.targets.upcoming : type === "second" ? PO.targets.issues : type === "numbers" ? PO.targets.amounts : type === "explain" ? PO.targets.kinds : [{ ref: new Date(Date.now() - 4 * 3600e3).toISOString().slice(0, 10), label: type === "week" ? "The next seven days" : "The past seven days" }];
   const fillRefs = () => { const list = refsFor($("#pType").value); $("#pRef").innerHTML = list.length ? list.map((r) => `<option value="${esc(r.ref)}">${esc(r.label)}</option>`).join("") : `<option value="">Nothing to pick</option>`; };
   $("#pType").onchange = fillRefs; fillRefs();
   $("#pGo").onclick = async (e) => { const ref = $("#pRef").value; if (!ref) return toast("Nothing to draft for that type yet."); await runDraft(e.target, { type: $("#pType").value, ref }); };
   body.querySelectorAll("[data-sug]").forEach((b) => b.onclick = async () => { const s = ideas[+b.dataset.sug]; await runDraft(b, { type: s.type, ref: s.ref, key: s.key }); });
   body.querySelectorAll("[data-open]").forEach((b) => b.onclick = () => viewPosts({ keep: true, tab: "drafts", sel: b.dataset.open }));
+  body.querySelectorAll("[data-dismiss],[data-undismiss]").forEach((b) => b.onclick = async () => { const on = !!b.dataset.dismiss; await api("postDismiss", { key: b.dataset.dismiss || b.dataset.undismiss, on }); toast(on ? "Hidden. Find it under “Not posting” to bring it back." : "Back in Ideas."); await viewPosts({ tab: "ideas" }); refreshCounts(); });
 }
 
 // A list on the left, the open item on the right. On a phone: the list, or the open item with a way back.
