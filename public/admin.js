@@ -130,7 +130,7 @@ async function viewMeetings() {
       </div>
       <div class="actions">
         ${counts.fill ? `<button id="fillOld" class="primary" title="Uses the Claude API">Fill in older meetings (${counts.fill})</button>` : ""}
-        <button id="scan" title="Checks the calendars and both document pages, and previews any meeting in the next two days that has a new agenda">Check now</button>
+        <button id="scan" title="Checks the calendars and both document pages, and previews every upcoming meeting that has a new agenda">Check now</button>
         <button id="draftAll" class="primary" ${counts.ready ? "" : "disabled"}>Draft all ready (${counts.ready})</button>
       </div>
     </div>
