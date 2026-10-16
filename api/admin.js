@@ -8,6 +8,7 @@ import { BODIES, GLOSSARY } from "../lib/county.js";
 import { subCount, broadcast, pushReady, prefStats } from "../lib/push.js";
 import { classifyIssue, KINDS } from "../lib/roadmaps.js";
 import { dupeScan, dupeQueue, mergeIssues, relateIssues, dismiss, settlePair } from "../lib/issues.js";
+import { projectScan, projectQueue, applyProposal, dismissProposal, createProject, addParts, removePart, deleteProject, renameProject } from "../lib/projects.js";
 import { videoInventory } from "../lib/live.js";
 import { CHANNELS } from "../lib/county.js";
 import { json, fail, isAdmin } from "../lib/http.js";
@@ -103,6 +104,16 @@ export async function POST(request) {
         await saveIssue(i); return json({ kind: classifyIssue(i) });
       }
       // Duplicate issues: scan (repeat until pending is 0), then merge / link / dismiss what's left
+      // Projects: one page above several issues (the jail's land, tax, bonds, contract, site plan)
+      case "projects": return json(await projectQueue());
+      case "projectScan": return json(await projectScan({ restart: !!p.restart }));
+      case "projectApply": return json({ project: await applyProposal(p.clusterId, Number(p.index), { title: p.title, parts: p.parts }) });
+      case "projectDismiss": return json(await dismissProposal(p.clusterId, Number(p.index)));
+      case "projectCreate": return json({ project: await createProject({ title: p.title, parts: p.parts || [] }) });
+      case "projectAdd": return json({ project: await addParts(p.key, p.parts || []) });
+      case "projectRemove": return json(await removePart(p.part));
+      case "projectDelete": return json(await deleteProject(p.key));
+      case "projectRename": return json({ project: await renameProject(p.key, p.title) });
       case "dupes": return json(await dupeQueue());
       case "dupeScan": return json(await dupeScan({ restart: !!p.restart, batch: Number(p.batch) || 20 }));
       case "dupeMerge": { if (!p.into || !p.from) return fail("Need into and from"); const i = await mergeIssues(p.into, p.from); await settlePair(p.into, p.from, "merged", i.key); return json({ ok: true, key: i.key, title: i.title, events: i.events.length }); }
