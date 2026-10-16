@@ -446,3 +446,9 @@ tr.muted td { color: var(--none); }
 .dissue:hover { text-decoration: underline; }
 .drow .amt { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
 @media (max-width: 520px) { .drow { grid-template-columns: 6px minmax(0, 1fr); } .drow .amt { grid-column: 2; } }
+
+/* Alerts page: how to put it on your phone */
+.howto { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.howto-col { padding: 16px 18px; }
+.howto-col h3 { margin: 0 0 2px; font-family: var(--display); font-size: 1.2rem; font-variation-settings: "opsz" 20; }
+.howto-col .steps-list { margin-top: 10px; }

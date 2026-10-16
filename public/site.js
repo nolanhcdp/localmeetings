@@ -226,7 +226,23 @@ async function pageHome() {
 function pageAlerts() {
   setNav(""); title("Alerts");
   view.innerHTML = `<h1>Alerts</h1><p class="muted">Second Reading can send a notification to your phone: the day before a meeting when the agenda summary is ready, about an hour before it starts, and when the write-up is published. No account, no email. Once alerts are on, pick which ones you want.</p>
-    <div id="alertsSlot"></div>`;
+    <div id="alertsSlot"></div>
+    <h2 style="margin-top:34px">Put it on your phone</h2>
+    <p class="muted">Second Reading works like an app once it's on your home screen, and on iPhone that's the only way alerts can reach you. Two minutes, no app store.</p>
+    <div class="howto">
+      <section class="panel howto-col"><h3>iPhone</h3><p class="small muted">Safari or Chrome. Needs iOS 16.4 or newer.</p><ol class="steps-list">
+        <li>Open <b>secondreading.org</b> in Safari or Chrome. If you're reading this inside Facebook or another app, tap <b>···</b> and choose <b>Open in browser</b> first.</li>
+        <li>Tap the <b>Share</b> button: the square with an arrow pointing up. In Chrome it's at the right end of the address bar; on newer iPhones in Safari, tap <b>···</b> first.</li>
+        <li>Scroll down and tap <b>Add to Home Screen</b>, then <b>Add</b>.</li>
+        <li>Open <b>Second Reading</b> from your home screen, come back to this page, and tap <b>Turn on alerts</b>. Allow notifications when your phone asks.</li>
+      </ol></section>
+      <section class="panel howto-col"><h3>Android</h3><p class="small muted">Chrome.</p><ol class="steps-list">
+        <li>Open <b>secondreading.org</b> in Chrome.</li>
+        <li>Tap the <b>⋮</b> menu at the top right and choose <b>Add to Home screen</b> (sometimes <b>Install app</b>), then <b>Add</b>.</li>
+        <li>Open <b>Second Reading</b> from your home screen and tap <b>Turn on alerts</b>. Allow notifications when your phone asks.</li>
+      </ol><p class="small muted">On Android, alerts also work straight from Chrome without the home-screen step.</p></section>
+    </div>
+    <p class="small muted" style="margin-top:14px">On a computer, alerts work in the browser: tap <b>Turn on alerts</b> above and allow notifications. To stop them, come back here and tap <b>Turn off</b>, or remove the app from your home screen.</p>`;
   mountAlerts(document.getElementById("alertsSlot"), { full: true });
 }
 
