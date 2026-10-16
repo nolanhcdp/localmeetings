@@ -432,3 +432,17 @@ tr.muted td { color: var(--none); }
   .irow b { white-space: normal; }
   .irow .imeta { grid-column: 2; white-space: normal; margin-top: 2px; }
 }
+
+/* Decisions feed */
+.dday { font-family: var(--display); font-size: 1.15rem; margin: 26px 0 6px; font-variation-settings: "opsz" 20; }
+.drow { display: grid; grid-template-columns: 6px minmax(0, 1fr) auto; gap: 0 14px; align-items: center; padding: 10px 2px; border-bottom: 1px solid var(--hair); }
+.drow .mark { height: 100%; min-height: 28px; border-radius: 3px; background: var(--none); }
+.drow .mark.passed { background: var(--pass); } .drow .mark.failed { background: var(--fail); } .drow .mark.tabled { background: var(--gold); }
+.dtitle { font-weight: 600; color: var(--ink); text-decoration: none; }
+.dtitle:hover { text-decoration: underline; text-underline-offset: 3px; }
+.drow .sub { color: var(--faint); font-size: .88rem; margin-top: 2px; }
+.dboard { color: var(--board, var(--soft)); font-weight: 600; }
+.dissue { color: var(--link); text-decoration: none; }
+.dissue:hover { text-decoration: underline; }
+.drow .amt { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+@media (max-width: 520px) { .drow { grid-template-columns: 6px minmax(0, 1fr); } .drow .amt { grid-column: 2; } }

@@ -268,29 +268,77 @@ async function pageCalendar(ym) {
 }
 
 const yearChips = (years, year, href) => years.length > 1 ? `<div class="filters years"><a class="chip ${year ? "" : "on"}" href="${href("")}">All years</a>${years.map((y) => `<a class="chip ${year === y ? "on" : ""}" href="${href(y)}">${y}</a>`).join("")}</div>` : "";
-// Decisions: the home page's "Latest decisions" list, for every meeting
-async function pageDecisions(body, sel) {
+// Decisions: one flat feed of every result across every board, newest first. Filters run in the browser and live in the link.
+const DEC_RESULTS = [["passed", "Passed"], ["failed", "Failed"], ["tabled", "Tabled"], ["none", "No vote"]];
+const DEC_CATS = [["money", "Money", ["spending", "transfer", "salaries", "taxes", "budget", "purchase", "contract", "tax abatement"]], ["land", "Land and buildings", ["land use"]], ["laws", "Laws and rules", ["ordinance", "resolution"]], ["people", "Appointments", ["appointment"]], ["other", "Everything else", ["public comment", "board member business", "other"]]];
+async function pageDecisions(body, sel, params = new URLSearchParams()) {
   if (body === "all") body = "";
   setNav("decisions"); title("Decisions");
   // sel is a year (2025) or a month (2025-09); a month implies its year
   const month = /^\d{4}-\d{2}$/.test(sel || "") ? sel : "";
   const year = month ? month.slice(0, 4) : /^\d{4}$/.test(sel || "") ? sel : "";
-  const d = await api({ view: "decisions", ...(body ? { body } : {}), ...(year ? { year } : {}) });
+  const d = await api({ view: "decisions", ...(year ? { year } : {}) });
+  const st = { q: params.get("q") || "", result: (params.get("result") || "").split(",").filter(Boolean), cat: params.get("cat") || "", sort: params.get("sort") || "recent" };
   const months = [...new Set(d.meetings.map((m) => m.date.slice(0, 7)))];
-  const shown = month ? d.meetings.filter((m) => m.date.startsWith(month)) : d.meetings;
-  const groups = {};
-  for (const m of shown) (groups[m.date.slice(0, 7)] ||= []).push(m);
-  const mname = (k) => new Date(k + "-15T12:00").toLocaleDateString("en-US", { month: "long", year: "numeric" });
-  const href = (b, x) => `#/decisions/${b || "all"}${x ? "/" + x : ""}`;
-  const block = (m) => { const items = m.items.slice().sort((a, b) => a.idx - b.idx); const passed = items.filter((i) => i.result === "passed").length; return `
-    <div class="sechead dec"><h3><a href="#/m/${esc(m.id)}" class="${bcls(m.body)}">${esc(m.bodyName)}</a> <span class="sub">${esc(dt(m.date, { weekday: "short", month: "short", day: "numeric" }))} · ${items.length} item${items.length === 1 ? "" : "s"}${passed ? `, ${passed} passed` : ""}</span></h3></div>
-    ${decidedList(m, items)}`; };
   const years = d.years || [];
-  view.innerHTML = `<h1>Decisions</h1><p class="muted">Every item that came before a board, newest first, with how it ended. Green passed, red failed, gold tabled, grey no vote.</p>
-    <div class="filters"><a class="chip ${body ? "" : "on"}" href="${href("", sel)}">All boards</a>${Object.entries(d.bodies).map(([k, b]) => `<a class="chip ${body === k ? "on" : ""}" href="${href(k, sel)}">${esc(b.short)}</a>`).join("")}</div>
-    <div class="filters months">${years.length > 1 ? `<a class="chip ${year ? "" : "on"}" href="${href(body, "")}">All years</a>${years.map((y) => `<a class="chip ${year === y ? "on" : ""}" href="${href(body, y)}">${y}</a>`).join("")}` : ""}
-      ${year || years.length <= 1 ? `${years.length > 1 ? `<span class="chipsep"></span>` : ""}${months.map((k) => `<a class="chip soft ${month === k ? "on" : ""}" href="${href(body, month === k ? (years.length > 1 ? year : "") : k)}">${esc(new Date(k + "-15T12:00").toLocaleDateString("en-US", { month: "short" }))}</a>`).join("")}` : ""}</div>
-    ${Object.entries(groups).map(([k, ms]) => `<div class="sechead"><h2>${esc(mname(k))}</h2></div>${ms.map(block).join("")}`).join("") || `<p class="muted">Nothing ${month ? "in " + esc(mname(month)) : year ? "in " + esc(year) : "yet"}.</p>`}`;
+  const rows = d.meetings.flatMap((m) => m.items.map((it) => ({ ...it, meetingId: m.id, body: m.body, bodyName: m.bodyName, date: m.date, r: resultOf(it) })));
+  const mname = (k) => new Date(k + "-15T12:00").toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const qs = () => { const p = new URLSearchParams(); if (st.q) p.set("q", st.q); if (st.result.length) p.set("result", st.result.join(",")); if (st.cat) p.set("cat", st.cat); if (st.sort !== "recent") p.set("sort", st.sort); return p.toString() ? "?" + p : ""; };
+  const href = (b, x) => `#/decisions/${b || "all"}${x ? "/" + x : ""}${qs()}`;
+  view.innerHTML = `<h1>Decisions</h1><p class="muted">Every result from every board, newest first. Green passed, red failed, gold tabled, grey no vote. Each one links to its meeting and, when there is one, to the issue it belongs to.</p>
+    <div class="filters" id="decBoards"></div>
+    <div class="filters months" id="decMonths"></div>
+    <button class="btn ifilter-toggle" id="dfToggle" aria-expanded="false">Filter</button>
+    <div class="ibar" id="dbar">
+      <input type="search" id="dq" placeholder="Search: a street, a business, an ordinance number…" value="${esc(st.q)}" aria-label="Search decisions">
+      <div class="filters ichips">${DEC_RESULTS.map(([k, l]) => `<button class="chip ${st.result.includes(k) ? "on" : ""}" data-res="${k}">${l} <span class="n" data-n="${k}"></span></button>`).join("")}</div>
+      <div class="irow-sel">
+        <label><span class="sr">Kind</span><select id="dcat"><option value="">Every kind of item</option>${DEC_CATS.map(([k, l]) => `<option value="${k}" ${st.cat === k ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+        <label><span class="sr">Sort</span><select id="dsort"><option value="recent" ${st.sort === "recent" ? "selected" : ""}>Sort: Newest first</option><option value="money" ${st.sort === "money" ? "selected" : ""}>Sort: Most money</option></select></label>
+      </div>
+    </div>
+    <p class="icount small muted" id="dcount"></p>
+    <div id="dfeed"></div>`;
+  const chips = () => {
+    view.querySelector("#decBoards").innerHTML = `<a class="chip ${body ? "" : "on"}" href="${href("", sel)}">All boards</a>${Object.entries(d.bodies).map(([k, b]) => `<a class="chip ${body === k ? "on" : ""}" href="${href(k, sel)}">${esc(b.short)}</a>`).join("")}`;
+    view.querySelector("#decMonths").innerHTML = `${years.length > 1 ? `<a class="chip ${year ? "" : "on"}" href="${href(body, "")}">All years</a>${years.map((y) => `<a class="chip ${year === y ? "on" : ""}" href="${href(body, y)}">${y}</a>`).join("")}` : ""}
+      ${year || years.length <= 1 ? `${years.length > 1 ? `<span class="chipsep"></span>` : ""}${months.map((k) => `<a class="chip soft ${month === k ? "on" : ""}" href="${href(body, month === k ? (years.length > 1 ? year : "") : k)}">${esc(new Date(k + "-15T12:00").toLocaleDateString("en-US", { month: "short" }))}</a>`).join("")}` : ""}`;
+  };
+  const catOf = (c) => (DEC_CATS.find(([, , list]) => list.includes(c)) || ["other"])[0];
+  const matches = (it, skipResult = false) => {
+    if (body && it.body !== body) return false;
+    if (month && !it.date.startsWith(month)) return false;
+    if (!skipResult && st.result.length && !st.result.includes(it.r)) return false;
+    if (st.cat && catOf(it.category) !== st.cat) return false;
+    if (st.q) { const hay = `${it.title} ${it.issue?.title || ""} ${it.docNumber || ""} ${it.bodyName}`.toLowerCase(); if (!st.q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w))) return false; }
+    return true;
+  };
+  const setLink = (push) => { const h = href(body, sel); if (h !== location.hash) history[push ? "pushState" : "replaceState"](null, "", h); };
+  const render = () => {
+    chips();
+    const base = rows.filter((it) => matches(it, true));
+    for (const [k] of DEC_RESULTS) { const el = view.querySelector(`[data-n="${k}"]`); if (el) el.textContent = base.filter((it) => it.r === k).length; }
+    let shown = rows.filter((it) => matches(it));
+    shown = st.sort === "money" ? shown.slice().sort((a, b) => (b.amount || 0) - (a.amount || 0) || b.date.localeCompare(a.date)) : shown;
+    const active = (st.q ? 1 : 0) + st.result.length + (st.cat ? 1 : 0);
+    view.querySelector("#dfToggle").textContent = active ? `Filter (${active})` : "Filter";
+    view.querySelector("#dcount").innerHTML = `Showing ${shown.length} of ${rows.length}${month ? ` in ${esc(mname(month))}` : year ? ` in ${esc(year)}` : ""}${active ? ` · <button class="linkbtn" id="dclear">Clear filters</button>` : ""}`;
+    const row = (it) => `<div class="drow ${bcls(it.body)}"><span class="mark ${it.r}"></span>
+      <div class="dmain"><a class="dtitle" href="#/m/${esc(it.meetingId)}#item-${it.idx}">${esc(it.title)}</a>
+        <div class="sub"><span class="dboard">${esc(BOARD_SHORT[it.body] || it.bodyName)}</span> · ${esc(stageText(it.stage))}${st.sort === "money" ? ` · ${esc(dt(it.date, { month: "short", day: "numeric", year: "numeric" }))}` : ""}${it.issue ? ` · <a class="dissue" href="#/i/${esc(it.issue.key)}">${esc(it.issue.title || "Follow this issue")} →</a>` : ""}</div></div>
+      <span class="${it.amount ? "amt" : "sub"}">${it.amount ? money(it.amount) : ""}</span></div>`;
+    let html = "";
+    if (st.sort === "money") html = `<div class="dlist">${shown.map(row).join("")}</div>`;
+    else { let day = ""; for (const it of shown) { if (it.date !== day) { day = it.date; html += `<h3 class="dday">${esc(dt(day, { weekday: "long", month: "long", day: "numeric", year: "numeric" }))}</h3>`; } html += row(it); } }
+    view.querySelector("#dfeed").innerHTML = html || `<p class="muted">Nothing matches${month ? " in " + esc(mname(month)) : year ? " in " + esc(year) : ""}.${active ? ` <button class="linkbtn" id="dclear2">Clear filters</button>` : ""}</p>`;
+    for (const id of ["#dclear", "#dclear2"]) view.querySelector(id)?.addEventListener("click", () => { st.q = ""; st.result = []; st.cat = ""; view.querySelector("#dq").value = ""; view.querySelector("#dcat").value = ""; view.querySelectorAll("[data-res]").forEach((b) => b.classList.remove("on")); setLink(true); render(); });
+  };
+  view.querySelector("#dq").addEventListener("input", (e) => { st.q = e.target.value.trim(); setLink(false); render(); });
+  view.querySelectorAll("[data-res]").forEach((b) => b.onclick = () => { const k = b.dataset.res; st.result = st.result.includes(k) ? st.result.filter((x) => x !== k) : [...st.result, k]; b.classList.toggle("on"); setLink(true); render(); });
+  view.querySelector("#dcat").onchange = (e) => { st.cat = e.target.value; setLink(true); render(); };
+  view.querySelector("#dsort").onchange = (e) => { st.sort = e.target.value; setLink(true); render(); };
+  view.querySelector("#dfToggle").onclick = () => { const on = view.querySelector("#dbar").classList.toggle("open"); view.querySelector("#dfToggle").setAttribute("aria-expanded", String(on)); };
+  render();
 }
 
 async function pageMeetings(body, year) {
@@ -895,7 +943,7 @@ async function route() {
   try {
     if (!parts.length) await pageHome();
     else if (parts[0] === "meetings") await pageMeetings(parts[1], parts[2]);
-    else if (parts[0] === "decisions") await pageDecisions(parts[1], parts[2]);
+    else if (parts[0] === "decisions") await pageDecisions(parts[1], parts[2], new URLSearchParams(query));
     else if (parts[0] === "m") await pageMeeting(parts[1]);
     else if (parts[0] === "calendar") await pageCalendar(parts[1]);
     else if (parts[0] === "issues") await pageIssues(new URLSearchParams(query));
