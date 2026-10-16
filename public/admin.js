@@ -21,7 +21,7 @@ async function api(action, body = {}, path = "/api/admin") {
   const res = await fetch(path, { method: "POST", headers: { "content-type": "application/json", "x-admin-code": CODE }, body: JSON.stringify({ action, ...body }) });
   const data = await res.json().catch(() => ({}));
   if (res.status === 401) { showLogin("That code didn't work."); throw new Error("auth"); }
-  if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+  if (!res.ok) throw new Error(data.error || (res.status === 504 ? "That took too long and the server cut it off (504). Try again; the next run picks up where this left off." : `Error ${res.status}`));
   return data;
 }
 
