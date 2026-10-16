@@ -548,6 +548,7 @@ function projectsHtml(d) {
     </div>
     <p class="muted" style="margin:.3rem 0 .6rem">A project is one page above several issues: the jail is its land, its tax, its bonds, its contract and its site plan. This finds issues that share a subject, asks Claude which ones are pieces of one thing, makes the sure ones, and leaves the rest here. You can also pick a project in the dropdown on any issue below.</p>
     <div id="projLog" class="muted"></div>
+    ${d.errors?.length ? `<details style="margin:.3rem 0"><summary class="err">${d.errors.length} cluster${d.errors.length === 1 ? "" : "s"} couldn't be checked</summary>${d.errors.map((e) => `<div class="issue-ev"><span class="err">${esc(e.error)}</span><div class="meta">${esc(e.keys.join(" · "))}</div></div>`).join("")}</details>` : ""}
     ${review.map(prop).join("")}
     ${d.projects?.length ? `<div style="margin-top:.6rem"><div class="meta" style="margin-bottom:.2rem">${d.projects.length} project${d.projects.length === 1 ? "" : "s"}</div>${d.projects.map(existing).join("")}</div>` : review.length || d.pending ? "" : `<p class="muted" style="margin:0">No projects yet.</p>`}
   </div>`;
@@ -559,13 +560,14 @@ function wireProjects() {
   const scan = async (restart = false) => {
     const btn = $("#projScan"); if (btn) { btn.disabled = true; btn.textContent = "Checking…"; }
     let guard = 0, applied = [];
+    let lastErr = "";
     try {
-      let r = await api("projectScan", { restart }); applied = r.applied || [];
-      while (r.queue && r.queue.pending > 0 && !r.error && guard++ < 60) { log(`${r.queue.pending} clusters still to check; ${applied.length} projects made so far…`); r = await api("projectScan"); applied = applied.concat(r.applied || []); }
-      if (r.error) toast(r.error, 6000);
-      toast(`Done. ${applied.length} project${applied.length === 1 ? "" : "s"} made on their own; ${r.queue?.review?.length || 0} for you to look at.`, 6000);
-    } catch (e) { toast(e.message, 6000); }
-    refresh();
+      let r = await api("projectScan", { restart }); applied = r.applied || []; if (r.error) lastErr = r.error;
+      while (r.queue && r.queue.pending > 0 && guard++ < 60) { log(`${r.queue.pending} clusters still to check; ${applied.length} groupings made so far…${lastErr ? ` Last problem: ${lastErr}` : ""}`); r = await api("projectScan"); applied = applied.concat(r.applied || []); if (r.error) lastErr = r.error; }
+      toast(`Done. ${applied.length} grouping${applied.length === 1 ? "" : "s"} made on their own; ${r.queue?.review?.length || 0} for you to look at.`, 6000);
+    } catch (e) { lastErr = e.message; }
+    await refresh();
+    if (lastErr) { const l = $("#projLog"); if (l) l.innerHTML = `<span class="err">Problem during the scan: ${esc(lastErr)}</span>`; }
   };
   $("#projScan").onclick = () => scan(false);
   $("#projRescan")?.addEventListener("click", () => { if (confirm("Look at every issue again from scratch? Projects you've already made are kept.")) scan(true); });
