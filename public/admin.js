@@ -1102,7 +1102,7 @@ function ideasTab(body, ideas) {
       <div><span class="lbl">${esc(s.label)}</span> <b>${esc(s.title)}</b><div class="meta">${esc(s.why)}</div></div>
       <div class="actions"><button class="linkish" data-dismiss="${esc(s.key)}" title="Hide this idea">Not posting</button>${drafted.has(s.key) ? `<button data-open="${esc(s.key)}">Open draft</button>` : `<button class="primary" data-sug="${i}">Draft</button>`}</div></div>`).join("") : `<p class="muted">Nothing new right now.</p>`}</div>
     ${hidden.length ? `<details class="pold"><summary>Not posting (${hidden.length})</summary><div class="card plist">${hidden.map((s) => `<div class="ps-row"><div><span class="lbl">${esc(s.label)}</span> <span class="muted">${esc(s.title)}</span></div><div class="actions"><button class="linkish" data-undismiss="${esc(s.key)}">Bring back</button></div></div>`).join("")}</div></details>` : ""}`;
-  const refsFor = (type) => type === "headsup" ? PO.targets.upcoming : type === "second" ? PO.targets.issues : type === "numbers" ? PO.targets.amounts : type === "explain" ? PO.targets.kinds : [{ ref: new Date(Date.now() - 4 * 3600e3).toISOString().slice(0, 10), label: type === "week" ? "The next seven days" : "The past seven days" }];
+  const refsFor = (type) => type === "headsup" ? PO.targets.upcoming : type === "second" ? PO.targets.issues : type === "numbers" ? PO.targets.amounts : type === "explain" ? PO.targets.kinds : type === "project" ? (PO.targets.projects || []) : [{ ref: new Date(Date.now() - 4 * 3600e3).toISOString().slice(0, 10), label: type === "week" ? "The next seven days" : "The past seven days" }];
   const fillRefs = () => { const list = refsFor($("#pType").value); $("#pRef").innerHTML = list.length ? list.map((r) => `<option value="${esc(r.ref)}">${esc(r.label)}</option>`).join("") : `<option value="">Nothing to pick</option>`; };
   $("#pType").onchange = fillRefs; fillRefs();
   $("#pGo").onclick = async (e) => { const ref = $("#pRef").value; if (!ref) return toast("Nothing to draft for that type yet."); await runDraft(e.target, { type: $("#pType").value, ref }); };
@@ -1232,7 +1232,7 @@ async function drawCard(cv, card) {
     return;
   }
 
-  const top = header();
+  const top = header(layout === "timeline" && (card.rows || []).length >= 7 ? 92 : 112);
   if (layout === "week") {
     const rows = card.rows || []; const avail = BOTTOM - top; const rowH = Math.min(190, avail / Math.max(1, rows.length));
     const ts = rowH < 110 ? 26 : rowH < 150 ? 30 : 36; let y = top;
@@ -1247,6 +1247,33 @@ async function drawCard(cv, card) {
       const ls = wrap(r.line, `400 ${ts}px "Inter", sans-serif`, R - X).slice(0, rowH < 100 ? 1 : 2);
       ls.forEach((l, k) => text(k === ls.length - 1 && wrap(r.line, `400 ${ts}px "Inter", sans-serif`, R - X).length > ls.length ? l.replace(/\s*\S*$/, "…") : l, `400 ${ts}px "Inter", sans-serif`, C.ink, X, by + (k + 1) * (ts * 1.3)));
       y += rowH;
+    });
+    return;
+  }
+
+  if (layout === "timeline") {
+    // Dated steps, oldest first: the date on the left, a dot in the board's color, the step and its board on the right.
+    // Every row is measured first and the type shrinks together until the whole list fits above the footer.
+    const rows = card.rows || []; const cx = L + 232, X = cx + 54;
+    const measure = (tS) => { const bS = Math.round(tS * 0.72); return rows.map((r) => { const tl = wrap(r.text, `800 ${tS}px "Inter", sans-serif`, R - X).slice(0, 2); return { r, tl, bS, h: tl.length * tS * 1.12 + bS * 1.45 }; }); };
+    let tS = rows.length <= 5 ? 42 : 36, m = measure(tS);
+    const total = (m) => m.reduce((a, o) => a + o.h, 0);
+    const minGap = 26;
+    while (total(m) + minGap * Math.max(0, rows.length - 1) > BOTTOM - top - 20 && tS > 24) { tS -= 2; m = measure(tS); }
+    const gap = rows.length > 1 ? Math.min(90, (BOTTOM - top - 20 - total(m)) / (rows.length - 1)) : 0;
+    const dS = Math.min(32, tS - 4);
+    let y = top + 20 + tS * 0.6;
+    const ys = m.map((o) => { const yy = y; y += o.h + gap; return yy; });
+    if (rows.length > 1) { x.fillStyle = C.rule; x.fillRect(cx - 2.5, ys[0], 5, ys[ys.length - 1] - ys[0]); }
+    m.forEach((o, i) => {
+      const r = o.r, col = colorOf(r.board), last = i === rows.length - 1, yy = ys[i];
+      const [d1, d2] = r.date.split(", ");
+      text(d1, `800 ${dS}px "Inter", sans-serif`, C.ink, cx - 44, yy + dS * 0.36, "right");
+      if (d2) text(d2, `400 ${dS - 4}px "Inter", sans-serif`, C.soft, cx - 44, yy + dS * 0.36 + dS * 1.1, "right");
+      x.fillStyle = col; x.beginPath(); x.arc(cx, yy, last ? 22 : 15, 0, Math.PI * 2); x.fill();
+      if (last) { x.strokeStyle = C.bg; x.lineWidth = 6; x.beginPath(); x.arc(cx, yy, 12, 0, Math.PI * 2); x.stroke(); }
+      o.tl.forEach((l, k) => text(l, `800 ${tS}px "Inter", sans-serif`, C.ink, X, yy + tS * 0.36 + k * tS * 1.12));
+      text(r.boardName, `400 ${o.bS}px "Inter", sans-serif`, one ? C.soft : col, X, yy + tS * 0.36 + (o.tl.length - 1) * tS * 1.12 + o.bS * 1.35);
     });
     return;
   }
