@@ -386,11 +386,72 @@ async function pageMeeting(id) {
   if (hash) document.getElementById("item-" + hash)?.scrollIntoView();
 }
 
-async function pageIssues() {
+// Issues: the few that are live this week as cards, then every issue as a one-line list you can search, filter and sort.
+// Filters live in the link (#/issues?status=decided&board=city-works) so a filtered view can be shared and Back works.
+const ISSUE_STATUS = [["coming", "Coming up"], ["progress", "In progress"], ["decided", "Decided"], ["stalled", "Stalled"], ["failed", "Voted down"]];
+const ISSUE_SORT = [["recent", "Last activity"], ["activity", "Most activity"], ["first", "First seen"], ["money", "Most money"], ["az", "A–Z"]];
+const LIVE_CAP = 12;
+let ISSUES_SHOW_ALL = false;
+async function pageIssues(params = new URLSearchParams()) {
   setNav("issues"); title("Issues");
   const d = await api({ view: "issues" });
-  view.innerHTML = `<h1>Issues</h1><p class="muted">One matter, every board it passes through, in order. Each issue sits on a road: green dots are steps that happened, the gold one is up next, dashed ones are still to come, a hollow one happened before we started following the board, and a ringed one is a project being paid for, bill by bill.</p>
-    <div class="grid">${d.issues.map((i) => issueCard(i, d.bodies)).join("") || `<p class="muted">No issues yet.</p>`}</div>`;
+  const all = d.issues;
+  const st = { q: params.get("q") || "", status: (params.get("status") || "").split(",").filter(Boolean), board: params.get("board") || "", road: params.get("road") || "", sort: params.get("sort") || "recent" };
+  const live = all.filter((i) => i.live);
+  const roads = [...new Map(all.filter((i) => i.kindLabel).map((i) => [i.kind, i.kindLabel])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  const boardOpts = Object.entries(d.bodies || {});
+  const boardSel = (v) => `<option value="">All boards</option><option value="gov:city" ${v === "gov:city" ? "selected" : ""}>Kokomo (all city boards)</option><option value="gov:county" ${v === "gov:county" ? "selected" : ""}>Howard County (all county boards)</option>${boardOpts.map(([k, b]) => `<option value="${esc(k)}" ${v === k ? "selected" : ""}>${esc(b.name)}</option>`).join("")}`;
+  view.innerHTML = `<h1>Issues</h1><p class="muted">One matter, every board it passes through, in order. Green dots are steps that happened, the gold one is up next, dashed ones are still to come.</p>
+    ${live.length ? `<h2>Live right now</h2><p class="muted small">On an upcoming agenda, waiting on a next step, or decided in the last 30 days.</p>
+      <div class="grid">${(ISSUES_SHOW_ALL ? live : live.slice(0, LIVE_CAP)).map((i) => issueCard(i, d.bodies)).join("")}</div>
+      ${live.length > LIVE_CAP && !ISSUES_SHOW_ALL ? `<p><button class="linkbtn" id="liveAll">Show all ${live.length}</button></p>` : ""}` : ""}
+    <h2 id="allIssues">All issues</h2>
+    <button class="btn ifilter-toggle" id="ifToggle" aria-expanded="false">Filter</button>
+    <div class="ibar" id="ibar">
+      <input type="search" id="iq" placeholder="Search: a street, a business, a case number…" value="${esc(st.q)}" aria-label="Search issues">
+      <div class="filters ichips">${ISSUE_STATUS.map(([k, l]) => `<button class="chip ${st.status.includes(k) ? "on" : ""}" data-st="${k}">${l} <span class="n" data-n="${k}"></span></button>`).join("")}</div>
+      <div class="irow-sel">
+        <label><span class="sr">Board</span><select id="iboard">${boardSel(st.board)}</select></label>
+        <label><span class="sr">Kind of decision</span><select id="iroad"><option value="">Every kind of decision</option>${roads.map(([k, l]) => `<option value="${esc(k)}" ${st.road === k ? "selected" : ""}>${esc(l)}</option>`).join("")}<option value="none" ${st.road === "none" ? "selected" : ""}>Other</option></select></label>
+        <label><span class="sr">Sort</span><select id="isort">${ISSUE_SORT.map(([k, l]) => `<option value="${k}" ${st.sort === k ? "selected" : ""}>Sort: ${l}</option>`).join("")}</select></label>
+      </div>
+    </div>
+    <p class="icount small muted" id="icount"></p>
+    <div class="ilist" id="ilist"></div>`;
+  const statusLabel = Object.fromEntries(ISSUE_STATUS);
+  const govOf = (b) => d.bodies?.[b]?.gov;
+  const matches = (i, skipStatus = false) => {
+    if (!skipStatus && st.status.length && !st.status.includes(i.status)) return false;
+    if (st.board) { if (st.board.startsWith("gov:")) { if (!(i.bodies || []).some((b) => govOf(b) === st.board.slice(4))) return false; } else if (!(i.bodies || []).includes(st.board)) return false; }
+    if (st.road) { if (st.road === "none" ? i.kind : i.kind !== st.road) return false; }
+    if (st.q) { const hay = (i.title + " " + (i.q || "")).toLowerCase(); if (!st.q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w))) return false; }
+    return true;
+  };
+  const sorters = { recent: (a, b) => (b.lastDate || "").localeCompare(a.lastDate || ""), activity: (a, b) => b.count - a.count || (b.lastDate || "").localeCompare(a.lastDate || ""), first: (a, b) => (b.firstDate || "").localeCompare(a.firstDate || ""), money: (a, b) => (b.money || 0) - (a.money || 0) || (b.lastDate || "").localeCompare(a.lastDate || ""), az: (a, b) => a.title.localeCompare(b.title) };
+  const setLink = (push) => {
+    const p = new URLSearchParams();
+    if (st.q) p.set("q", st.q); if (st.status.length) p.set("status", st.status.join(",")); if (st.board) p.set("board", st.board); if (st.road) p.set("road", st.road); if (st.sort !== "recent") p.set("sort", st.sort);
+    const h = "#/issues" + (p.toString() ? "?" + p : "");
+    if (h !== location.hash) history[push ? "pushState" : "replaceState"](null, "", h);
+  };
+  const render = () => {
+    const base = all.filter((i) => matches(i, true));
+    for (const [k] of ISSUE_STATUS) { const el = view.querySelector(`[data-n="${k}"]`); if (el) el.textContent = base.filter((i) => i.status === k).length; }
+    const shown = all.filter((i) => matches(i)).sort(sorters[st.sort] || sorters.recent);
+    const active = (st.q ? 1 : 0) + st.status.length + (st.board ? 1 : 0) + (st.road ? 1 : 0);
+    view.querySelector("#ifToggle").textContent = active ? `Filter (${active})` : "Filter";
+    view.querySelector("#icount").innerHTML = `Showing ${shown.length} of ${all.length}${active ? ` · <button class="linkbtn" id="iclear">Clear filters</button>` : ""}`;
+    view.querySelector("#ilist").innerHTML = shown.map((i) => `<a class="irow ${bcls(i.bodies?.[i.bodies.length - 1] || "")}" href="#/i/${esc(i.key)}"><span class="dot"></span><b>${esc(i.title)}</b><span class="imeta">${i.kindLabel ? `${esc(i.kindLabel)} · ` : ""}<span class="ist ${i.status}">${statusLabel[i.status] || ""}</span>${st.sort === "money" && i.money ? ` · ${money(i.money)}` : ""} · ${i.lastDate ? esc(dt(i.lastDate, { month: "short", day: "numeric", year: "numeric" })) : ""}</span></a>`).join("") || `<p class="muted">Nothing matches. <button class="linkbtn" id="iclear2">Clear filters</button></p>`;
+    for (const id of ["#iclear", "#iclear2"]) view.querySelector(id)?.addEventListener("click", () => { st.q = ""; st.status = []; st.board = ""; st.road = ""; view.querySelector("#iq").value = ""; view.querySelector("#iboard").value = ""; view.querySelector("#iroad").value = ""; view.querySelectorAll("[data-st]").forEach((b) => b.classList.remove("on")); setLink(true); render(); });
+  };
+  view.querySelector("#iq").addEventListener("input", (e) => { st.q = e.target.value.trim(); setLink(false); render(); });
+  view.querySelectorAll("[data-st]").forEach((b) => b.onclick = () => { const k = b.dataset.st; st.status = st.status.includes(k) ? st.status.filter((x) => x !== k) : [...st.status, k]; b.classList.toggle("on"); setLink(true); render(); });
+  view.querySelector("#iboard").onchange = (e) => { st.board = e.target.value; setLink(true); render(); };
+  view.querySelector("#iroad").onchange = (e) => { st.road = e.target.value; setLink(true); render(); };
+  view.querySelector("#isort").onchange = (e) => { st.sort = e.target.value; setLink(true); render(); };
+  view.querySelector("#ifToggle").onclick = () => { const on = view.querySelector("#ibar").classList.toggle("open"); view.querySelector("#ifToggle").setAttribute("aria-expanded", String(on)); };
+  view.querySelector("#liveAll")?.addEventListener("click", () => { ISSUES_SHOW_ALL = true; pageIssues(params); });
+  render();
 }
 
 const SPEAK = { right: ["speak", "Public can speak"], custom: ["speak soft", "Comment usually allowed"], none: ["quiet", "Public meeting, no comment"], staff: ["quiet", "No meeting"] };
@@ -825,7 +886,8 @@ addEventListener("pageshow", (e) => { if (e.persisted) refreshIfStale(); });
 
 // ---- router
 async function route() {
-  const [path] = location.hash.replace(/^#/, "").split("#item-");
+  const [full] = location.hash.replace(/^#/, "").split("#item-");
+  const [path, query = ""] = full.split("?");
   const parts = path.split("/").filter(Boolean).map(decodeURIComponent);
   window.scrollTo(0, 0);
   // Vercel Analytics sees only the part of the URL before the #, so report each view with a readable path
@@ -836,7 +898,7 @@ async function route() {
     else if (parts[0] === "decisions") await pageDecisions(parts[1], parts[2]);
     else if (parts[0] === "m") await pageMeeting(parts[1]);
     else if (parts[0] === "calendar") await pageCalendar(parts[1]);
-    else if (parts[0] === "issues") await pageIssues();
+    else if (parts[0] === "issues") await pageIssues(new URLSearchParams(query));
     else if (parts[0] === "i") await pageIssue(parts[1]);
     else if (parts[0] === "officials") await pageOfficials(parts[1]);
     else if (parts[0] === "o") await pageOfficial(parts[1], parts[2], parts[3]);

@@ -402,3 +402,33 @@ tr.muted td { color: var(--none); }
 .filters.months .chip.soft { font-weight: 500; padding: 3px 10px; font-size: .85rem; }
 .filters.months .chipsep { width: 1px; height: 22px; background: var(--line); margin: 0 6px; }
 .filters.years { margin-top: -8px; }
+
+/* Issues page: filter bar and one-line list */
+.ibar { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.ibar input[type=search] { width: 100%; font: inherit; padding: 9px 12px; border: 1px solid var(--line); border-radius: 4px; background: var(--paper); color: var(--ink); }
+.ichips { margin: 0; }
+.ichips .n { font-weight: 500; opacity: .7; margin-left: 2px; }
+.irow-sel { display: flex; gap: 8px; flex-wrap: wrap; }
+.irow-sel label { flex: 1 1 180px; }
+.irow-sel select { width: 100%; font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--ink); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.icount { margin: 10px 0 6px; }
+.ifilter-toggle { display: none; }
+.ilist { border-top: 1px solid var(--hair); }
+.irow { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; gap: 0 12px; align-items: center; padding: 10px 2px; border-bottom: 1px solid var(--hair); text-decoration: none; color: inherit; }
+.irow:hover b { text-decoration: underline; text-underline-offset: 3px; }
+.irow .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--board, var(--line)); }
+.irow b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.irow .imeta { color: var(--faint); font-size: .88rem; white-space: nowrap; }
+.ist { font-weight: 600; color: var(--soft); }
+.ist.coming { color: var(--board, #8a5a00); }
+.ist.failed { color: var(--fail); }
+.ist.stalled { color: var(--faint); }
+@media (max-width: 760px) {
+  .ifilter-toggle { display: inline-block; margin-bottom: 8px; }
+  .ibar { display: none; }
+  .ibar.open { display: flex; }
+  .irow { grid-template-columns: 8px minmax(0, 1fr); padding: 10px 2px; }
+  .irow b { white-space: normal; }
+  .irow .imeta { grid-column: 2; white-space: normal; margin-top: 2px; }
+}
