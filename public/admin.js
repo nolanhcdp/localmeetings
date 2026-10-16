@@ -84,6 +84,7 @@ async function viewToday() {
   for (const m of d.check) rows.push(bodyRow(m.body, `${esc(BODY_NAMES[m.body] || m.body)}, ${esc(shortDay(m.date))}`, "Minutes posted, not checked against the draft yet", `<span class="pill wait">Minutes</span><button class="primary" data-check="${esc(m.id)}">Check (a few cents)</button>`));
   for (const m of d.problems) rows.push(bodyRow(m.body, `${esc(BODY_NAMES[m.body] || m.body)}, ${esc(shortDay(m.date))}`, esc(m.error || "Something went wrong"), `<span class="pill bad">Problem</span><a class="btn" href="#/m/${encodeURIComponent(m.id)}">Open</a>`));
   if (d.ready.length) rows.push(bodyRow("", `${d.ready.length} meeting${d.ready.length === 1 ? " is" : "s are"} ready to draft`, d.ready.map((m) => `${esc(BODY_NAMES[m.body] || m.body)} ${esc(shortDay(m.date))}`).join(" · "), `<a class="btn" href="#/meetings" data-filter="ready">See them</a>`));
+  if (d.projectReviewCount) rows.push(bodyRow("", `${d.projectReviewCount} project grouping${d.projectReviewCount === 1 ? "" : "s"} to look at`, d.projectReview.map((r) => `${esc(r.title)} (${r.parts} parts)`).join(" · "), `<a class="btn" href="#/issues">Review</a>`));
   if (d.unsorted) rows.push(bodyRow("", `${d.unsorted} video${d.unsorted === 1 ? "" : "s"} need a meeting`, "Found on YouTube but not matched to a meeting", `<a class="btn" href="#/videos">Sort</a>`));
   const up = d.upcoming.map((m) => bodyRow(m.body, esc(m.bodyName), `${esc(shortDay(m.date))}${m.time ? ` · ${esc(m.time)}` : ""}${m.state === "previewed" ? ` · ${m.items} item${m.items === 1 ? "" : "s"}` : ""}`,
     m.cancelled ? `<span class="pill">Cancelled</span>` : m.maybeCanceled ? `<span class="pill wait">May be canceled</span>` : m.state === "previewed" ? `<span class="pill ok">Previewed</span>` : m.state === "agenda" ? `<span class="pill wait">Agenda posted</span>` : `<span class="pill">Waiting</span>`)).join("");
@@ -533,10 +534,10 @@ async function viewIssues() {
 function projectsHtml(d) {
   const review = d.review || [];
   const prop = (p) => `<div class="card" style="padding:.6rem .8rem;margin:.4rem 0" data-prop="${esc(p.clusterId)}" data-idx="${p.index}">
-    <div class="row" style="gap:.6rem;align-items:center"><input data-ptitle value="${esc(p.title)}" style="flex:1 1 16rem;font-weight:600"><span class="meta">${esc(p.confidence)} confidence</span></div>
+    <div class="row" style="gap:.6rem;align-items:center">${p.existing ? `<span style="flex:1 1 16rem"><span class="muted">Add to</span> <strong>${esc(p.existingTitle)}</strong></span>` : `<input data-ptitle value="${esc(p.title)}" style="flex:1 1 16rem;font-weight:600">`}<span class="meta">${esc(p.confidence)} confidence</span></div>
     <div class="muted" style="margin:.3rem 0">${esc(p.reason || "")}</div>
     ${p.parts.map((x) => `<label class="radio"><input type="checkbox" data-part="${esc(x.key)}" checked> ${esc(x.title)} <span class="meta">· ${x.items} item${x.items === 1 ? "" : "s"} · ${esc(x.from || "")} → ${esc(x.to || "")}${x.inProject ? ` · already in ${esc(x.inProject)}` : ""}</span></label>`).join("")}
-    <div class="actions" style="margin-top:.4rem"><button class="primary" data-pact="apply">Make this project</button><button data-pact="dismiss">Not a project</button></div></div>`;
+    <div class="actions" style="margin-top:.4rem"><button class="primary" data-pact="apply">${p.existing ? "Add to project" : "Make this project"}</button><button data-pact="dismiss">${p.existing ? "Doesn't belong" : "Not a project"}</button></div></div>`;
   const existing = (pr) => `<details class="pold" style="margin:.3rem 0"><summary><strong>${esc(pr.title)}</strong> <span class="meta">· ${pr.parts.length} part${pr.parts.length === 1 ? "" : "s"} · <a href="/#/i/${encodeURIComponent(pr.key)}" target="_blank" rel="noopener">public page ↗</a></span></summary>
     <div style="padding:.3rem .6rem .5rem">${pr.parts.map((x) => `<div class="issue-ev">${esc(x.title)} <span class="meta">· ${x.items} items</span> <button class="linkish" data-unpart="${esc(x.key)}">Remove</button></div>`).join("")}
     <div class="actions" style="margin-top:.5rem"><button class="linkish" data-rename="${esc(pr.key)}">Rename</button><button class="linkish danger" data-ungroup="${esc(pr.key)}">Ungroup (keeps the parts)</button></div></div></details>`;
@@ -571,7 +572,7 @@ function wireProjects() {
   box.querySelectorAll("[data-pact]").forEach((b) => b.onclick = async () => {
     const card = b.closest("[data-prop]"); const clusterId = card.dataset.prop, index = +card.dataset.idx;
     try {
-      if (b.dataset.pact === "apply") { const parts = [...card.querySelectorAll("[data-part]:checked")].map((x) => x.dataset.part); if (parts.length < 2) return toast("Pick at least two parts."); const r = await api("projectApply", { clusterId, index, title: card.querySelector("[data-ptitle]").value.trim(), parts }); toast(`Made “${r.project.title}”.`); }
+      if (b.dataset.pact === "apply") { const parts = [...card.querySelectorAll("[data-part]:checked")].map((x) => x.dataset.part); if (parts.length < (card.querySelector("[data-ptitle]") ? 2 : 1)) return toast("Pick at least two parts."); const r = await api("projectApply", { clusterId, index, title: card.querySelector("[data-ptitle]")?.value.trim(), parts }); toast(`Saved to “${r.project.title}”.`); }
       else await api("projectDismiss", { clusterId, index });
       viewIssues();
     } catch (e) { toast(e.message, 6000); }

@@ -185,17 +185,17 @@ export async function POST(request) {
       }
       case "askConfig": { const cfg = { monthlyCents: Math.max(0, Math.round(+p.monthlyCents || 0)), dailyCents: Math.max(0, Math.round(+p.dailyCents || 0)) }; await setJSON("config:ask", cfg); return json({ config: cfg }); }
       case "counts": {
-        const [n, ideas] = await Promise.all([needsYou(), suggestions().catch(() => [])]);
-        return json({ needsYou: n.held.length + n.reports.length + n.broken.length, ideas: ideas.filter((x) => !x.posted && !x.drafted && !x.dismissed).length });
+        const [n, ideas, pq] = await Promise.all([needsYou(), suggestions().catch(() => []), projectQueue().catch(() => ({ review: [] }))]);
+        return json({ needsYou: n.held.length + n.reports.length + n.broken.length + (pq.review?.length || 0), ideas: ideas.filter((x) => !x.posted && !x.drafted && !x.dismissed).length });
       }
       case "today": {
         const t = todayDate();
-        const [n, ideas, cal, videos, lastRun, lastTick, spend] = await Promise.all([needsYou(), suggestions().catch(() => []), calendar(), listVideos(), getJSON("status:lastRun"), getJSON("status:lastTick"), spendStatus(ADMIN_MEMBER).catch(() => ({}))]);
+        const [n, ideas, cal, videos, lastRun, lastTick, spend, pq] = await Promise.all([needsYou(), suggestions().catch(() => []), calendar(), listVideos(), getJSON("status:lastRun"), getJSON("status:lastTick"), spendStatus(ADMIN_MEMBER).catch(() => ({})), projectQueue().catch(() => ({ review: [] }))]);
         const sl = n.meetings.map(slim);
         const plus7 = new Date(Date.parse(t + "T12:00:00Z") + 7 * 864e5).toISOString().slice(0, 10);
         return json({
           today: t, lastRun, lastTick, askMonthCents: spend.monthCents ?? null, bodies: BODIES,
-          held: n.held.slice(0, 8), heldCount: n.held.length, reports: n.reports.length, broken: n.broken.map((m) => ({ id: m.id, body: m.body, date: m.date })),
+          held: n.held.slice(0, 8), heldCount: n.held.length, reports: n.reports.length, projectReview: (pq.review || []).slice(0, 3).map((r) => ({ title: r.title, parts: r.parts.length, confidence: r.confidence })), projectReviewCount: (pq.review || []).length, broken: n.broken.map((m) => ({ id: m.id, body: m.body, date: m.date })),
           check: sl.filter((m) => m.needsCheck).map((m) => ({ id: m.id, body: m.body, date: m.date })),
           problems: sl.filter((m) => m.status === "error" || m.previewError).map((m) => ({ id: m.id, body: m.body, date: m.date, error: m.error || m.previewError })),
           ready: sl.filter((m) => m.ready).map((m) => ({ id: m.id, body: m.body, date: m.date })),
