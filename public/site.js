@@ -135,6 +135,12 @@ function decidedList(m, items) {
 
 const issueCard = (i, bodies) => {
   const lastBody = i.bodies?.[i.bodies.length - 1] || "";
+  if (i.isProject) return `<a class="card ${bcls(lastBody)} project" href="#/i/${esc(i.key)}">
+  <b style="font-size:1.05rem">${esc(i.title)}</b>
+  <div class="small muted">Project · ${i.partCount} part${i.partCount === 1 ? "" : "s"} · ${i.count} decision${i.count === 1 ? "" : "s"}</div>
+  <div class="legend" style="margin-top:8px">${(i.bodies || []).map((b) => `<span class="${bcls(b)}"><i class="swatch"></i>${esc(BOARD_SHORT[b] || b)}</span>`).join("")}</div>
+  <div class="small muted" style="margin-top:6px">${i.status === "coming" ? "Coming up" : i.status === "progress" ? "In progress" : "Latest"}${i.lastDate ? ` · ${esc(dt(i.lastDate, { month: "short", day: "numeric" }))}` : ""}</div>
+</a>`;
   const p = i.progress;
   if (p && p.total) {
     const states = p.states || [];
@@ -567,10 +573,51 @@ function roadmapBlock(i, r) {
     </template>`;
 }
 
+const timelineItem = (e, showPart = false) => { const rr = resultOf({ result: e.vote?.result, stage: e.stage }); return `<li class="${bcls(e.body)}">
+          <div class="d">${esc(dt(e.date))} · ${esc(e.bodyName)}${showPart && e.partTitle ? ` · <a href="#/i/${esc(e.partKey)}" class="muted">${esc(e.partTitle)}</a>` : ""}</div>
+          <div><a href="#/m/${esc(e.meetingId)}#item-${e.idx}"><b>${esc(e.title)}</b></a></div>
+          ${e.whatItIs ? `<div class="muted">${esc(e.whatItIs)}</div>` : ""}
+          <div class="small" style="margin-top:4px"><span class="outcome ${rr}"><span class="dot ${rr}"></span>${esc(stageText(e.stage))}</span>${e.vote?.no?.length ? ` · No: ${esc(list(e.vote.no))}` : ""}${e.amount ? ` · ${money(e.amount)}` : ""}${e.videoId && e.videoSeconds != null ? ` · <a href="${yt(e.videoId, e.videoSeconds)}" target="_blank" rel="noopener">Watch</a>` : ""}</div>
+        </li>`; };
+function pageProject(i) {
+  title(i.title);
+  const lastBody = i.bodies?.[i.bodies.length - 1] || "";
+  const events = i.events.slice().reverse();
+  const sl = (st) => st === "underway" ? "Underway" : st === "done" ? "Decided" : st === "failed" ? "Voted down" : st === "stalled" ? "Stalled" : "In progress";
+  const partCard = (p) => { const r = p.roadmap; const states = r?.states || []; return `<a class="card ${bcls(p.bodies?.[p.bodies.length - 1] || "")} ${r?.status || ""}" href="#/i/${esc(p.key)}">
+      <b style="font-size:1.05rem">${esc(p.title)}</b>
+      <div class="small muted">${esc(p.kindLabel || list((p.bodies || []).map((b) => BOARD_SHORT[b] || b)))}</div>
+      ${states.length ? `<div class="steps">${states.map((st, k) => `<span class="s ${st}"></span>${k < states.length - 1 ? `<span class="l ${st === "done" && states[k + 1] === "done" ? "" : "next"}"></span>` : ""}`).join("")}</div>` : ""}
+      <div class="small muted" style="margin-top:6px">${r ? `${sl(r.status)}${r.next ? ` · Next: ${esc(r.next.title)}` : ""}` : `${p.count} step${p.count === 1 ? "" : "s"}`}${p.last ? ` · ${esc(stageText(p.last.stage))} ${esc(dt(p.last.date, { month: "short", day: "numeric" }))}` : ""}</div>
+    </a>`; };
+  view.innerHTML = `
+    <div class="band ${bcls(lastBody)}"><div class="in">
+      <div class="kicker"><a href="#/issues" style="color:#fff;text-decoration:none">Issues</a> · Project</div>
+      <h1>${esc(i.title)}</h1>
+      <div class="facts"><span><b>${i.count} decision${i.count === 1 ? "" : "s"}</b> across ${i.parts.length} part${i.parts.length === 1 ? "" : "s"}${i.firstDate ? ` since ${esc(dt(i.firstDate, { month: "long", year: "numeric" }))}` : ""}</span>${i.biggest[0] ? `<span class="pill">${money(i.biggest[0].amount)}</span>` : ""}</div>
+    </div></div>
+    <div class="two-col ${bcls(lastBody)}">
+      <div class="content">
+        <div class="sechead" style="margin-top:0"><h2>The pieces</h2><span class="sub">Each one is its own matter with its own road. Open one for the detail.</span></div>
+        <div class="grid">${i.parts.map(partCard).join("")}</div>
+        ${i.coming.length ? `<div class="sechead"><h2>Coming up</h2></div>${i.coming.map((c) => `<a class="card board" href="#/m/${esc(c.id)}"><div class="when">${esc(dt(c.date, { weekday: "short", month: "short", day: "numeric" }))}</div><div class="who">${esc(c.bodyName)}</div><ul class="agenda">${c.items.map((it) => `<li>${esc(it.title)}${it.publicHearing ? ` <span class="tag hearing">Public hearing</span>` : ""}</li>`).join("")}</ul></a>`).join("")}` : ""}
+        <div class="sechead"><h2>Everything that's happened</h2><span class="sub">Every board, every part, newest first</span></div>
+        <ol class="timeline" style="margin-top:16px">${events.map((e) => timelineItem(e, true)).join("")}</ol>
+      </div>
+      <aside id="issueAside">
+        ${i.next.length ? `<div class="panel" style="padding:14px 16px;background:var(--gold);border-color:#d9b23a"><b>What's next</b>${i.next.map((n) => `<div style="margin-top:4px">${esc(n.title)} <span class="small">(${esc(n.bodyName)})</span><div class="small muted">${esc(n.part)}</div></div>`).join("")}</div>` : ""}
+        ${i.biggest.length ? `<div class="panel asidebox"><b>The money</b>${i.biggest.map((b) => `<div style="margin-top:4px"><b>${money(b.amount)}</b> <span class="small muted">· ${esc(dt(b.date, { month: "short", year: "numeric" }))}</span><div class="small"><a href="#/m/${esc(b.meetingId)}#item-${b.idx}">${esc(b.title)}</a></div></div>`).join("")}</div>` : ""}
+        <div class="panel" style="padding:14px 16px;margin-top:12px"><b>Boards involved</b><div class="legend" style="flex-direction:column;gap:6px">${(i.bodies || []).map((b) => `<span class="${bcls(b)}"><i class="swatch"></i>${esc(BOARD_SHORT[b] || b)}</span>`).join("")}</div></div>
+      </aside>
+    </div>`;
+  const tpl = document.getElementById("asideTpl");
+  if (tpl) document.getElementById("issueAside").append(tpl.content.cloneNode(true));
+}
 async function pageIssue(key) {
   setNav("issues");
   const i = await api({ view: "issue", key });
   if (i.canonical && i.canonical !== key) { location.replace(`#/i/${encodeURIComponent(i.canonical)}`); return; } // a merged-away key: go to the page it lives on now
+  if (i.isProject) return pageProject(i);
   title(i.title);
   const lastBody = i.bodies?.[i.bodies.length - 1] || "";
   const events = i.events.slice().reverse();
@@ -581,7 +628,7 @@ async function pageIssue(key) {
     : [`<span><b>${i.count} step${i.count === 1 ? "" : "s"}</b> since ${esc(dt(i.firstDate, { month: "long", day: "numeric", year: "numeric" }))}</span>`, i.latestStage ? `<span class="pill">${esc(stageText(i.latestStage))}</span>` : ""];
   view.innerHTML = `
     <div class="band ${bcls(lastBody)}"><div class="in">
-      <div class="kicker"><a href="#/issues" style="color:#fff;text-decoration:none">Issues</a> · ${kicker}</div>
+      <div class="kicker"><a href="#/issues" style="color:#fff;text-decoration:none">Issues</a>${i.project ? ` · <a href="#/i/${esc(i.project.key)}" style="color:#fff">${esc(i.project.title)}</a>` : ""} · ${kicker}</div>
       <h1>${esc(i.title)}</h1>
       <div class="facts">${facts.filter(Boolean).join("")}</div>
     </div></div>
@@ -590,16 +637,12 @@ async function pageIssue(key) {
         ${r ? roadmapBlock(i, r) : ""}
         ${i.coming.length ? `<div class="sechead" ${r ? "" : 'style="margin-top:0"'}><h2>Coming up</h2></div>${i.coming.map((c) => `<a class="card board" href="#/m/${esc(c.id)}"><div class="when">${esc(dt(c.date, { weekday: "short", month: "short", day: "numeric" }))}</div><div class="who">${esc(c.bodyName)}</div><ul class="agenda">${c.items.map((x) => `<li><span class="t">${esc(x.title)}</span>${x.publicHearing ? ` <span class="tag hearing">Public hearing</span>` : ""}<div class="small muted">${esc(x.step)}</div></li>`).join("")}</ul></a>`).join("")}` : ""}
         <div class="sechead" ${i.coming.length || r ? "" : 'style="margin-top:0"'}><h2>${r ? "What's happened so far" : "So far"}</h2><span class="sub">Newest first</span></div>
-        <ol class="timeline" style="margin-top:16px">${events.map((e) => { const rr = resultOf({ result: e.vote?.result, stage: e.stage }); return `<li class="${bcls(e.body)}">
-          <div class="d">${esc(dt(e.date))} · ${esc(e.bodyName)}</div>
-          <div><a href="#/m/${esc(e.meetingId)}#item-${e.idx}"><b>${esc(e.title)}</b></a></div>
-          ${e.whatItIs ? `<div class="muted">${esc(e.whatItIs)}</div>` : ""}
-          <div class="small" style="margin-top:4px"><span class="outcome ${rr}"><span class="dot ${rr}"></span>${esc(stageText(e.stage))}</span>${e.vote?.no?.length ? ` · No: ${esc(list(e.vote.no))}` : ""}${e.amount ? ` · ${money(e.amount)}` : ""}${e.videoId && e.videoSeconds != null ? ` · <a href="${yt(e.videoId, e.videoSeconds)}" target="_blank" rel="noopener">watch</a>` : ""} ${labelTag(e.label)}</div>
-        </li>`; }).join("")}</ol>
+        <ol class="timeline" style="margin-top:16px">${events.map((e) => timelineItem(e)).join("")}</ol>
       </div>
       <aside id="issueAside">
         ${i.nextStep?.text && !r ? `<div class="panel" style="padding:14px 16px;background:var(--gold);border-color:#d9b23a"><b>What's next</b><div>${esc(i.nextStep.text)}${i.nextStep.date ? ` (${esc(dt(i.nextStep.date, { month: "short", day: "numeric" }))})` : ""}</div>${i.nextStep.publicCanSpeak ? `<div style="margin-top:6px"><b>The public can speak.</b></div>` : ""}</div>` : ""}
         ${r && i.nextStep?.text ? `<div class="panel asidebox"><b>From the record</b><div class="muted">${esc(i.nextStep.text)}${i.nextStep.date ? ` (${esc(dt(i.nextStep.date, { month: "short", day: "numeric" }))})` : ""}</div></div>` : ""}
+        ${i.project ? `<div class="panel asidebox"><b>Part of</b><div><a href="#/i/${esc(i.project.key)}">${esc(i.project.title)}</a> <span class="small muted">· ${i.project.parts} part${i.project.parts === 1 ? "" : "s"}</span></div></div>` : ""}
         ${i.related?.length ? `<div class="panel asidebox"><b>Part of the same project</b><div>${i.related.map((x) => `<div><a href="#/i/${esc(x.key)}">${esc(x.title)}</a> <span class="small muted">· ${x.count} item${x.count === 1 ? "" : "s"}${x.lastDate ? `, last ${esc(dt(x.lastDate, { month: "short", day: "numeric" }))}` : ""}</span></div>`).join("")}</div></div>` : ""}
         ${r ? "" : `<div class="panel" style="padding:14px 16px;margin-top:12px"><b>Boards involved</b><div class="legend" style="flex-direction:column;gap:6px">${(i.bodies || []).map((b) => `<span class="${bcls(b)}"><i class="swatch"></i>${esc(BOARD_SHORT[b] || b)}</span>`).join("")}</div></div>`}
       </aside>

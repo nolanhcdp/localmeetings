@@ -485,18 +485,22 @@ async function viewVideos() {
 // ---------- Issues
 async function viewIssues() {
   if (!OV) { OV = await api("overview"); setBodies(OV.bodies); }
-  const { issues, kinds = [] } = await api("issues");
+  const { issues: allIssues, kinds = [] } = await api("issues");
+  const issues = allIssues.filter((i) => !i.isProject); // project pages are managed in the Projects box above
   issues.sort((a, b) => (b.lastDate || "").localeCompare(a.lastDate || ""));
   const kindSel = (i) => `<select data-kind="${esc(i.key)}" title="Which road this issue is on (sets the public page's roadmap)"><option value="" ${!i.kindOverride ? "selected" : ""}>Auto${i.guessed ? `: ${esc(kinds.find((k) => k.kind === i.guessed)?.label || i.guessed)}` : ": no roadmap"}</option>${kinds.map((k) => `<option value="${k.kind}" ${i.kindOverride === k.kind ? "selected" : ""}>${esc(k.label)}</option>`).join("")}<option value="none" ${i.kindOverride === "none" ? "selected" : ""}>No roadmap</option></select>`;
   const dupes = await api("dupes");
+  const projects = await api("projects");
+  const projSel = (i) => i.isProject ? "" : `<span class="muted" style="margin-left:.6rem">Project:</span><select data-proj="${esc(i.key)}" title="Group this issue under a project page"><option value="">None</option>${projects.projects.map((pr) => `<option value="${esc(pr.key)}" ${i.projectKey === pr.key ? "selected" : ""}>${esc(pr.title)}</option>`).join("")}<option value="__new">New project…</option></select>`;
   $("#view").innerHTML = `
     <h1>Issues</h1>
     <p class="muted">Every published item with an issue key lands on that issue's timeline; these are the public issue pages. Each issue is put on a "road" (rezoning, variance, appropriation…) automatically from its items; fix one with the dropdown. <button id="rebuild">Rebuild all timelines</button></p>
+    <div id="projects">${projectsHtml(projects)}</div>
     <div id="dupes">${dupesHtml(dupes)}</div>
     <datalist id="issueKeys">${issues.map((i) => `<option value="${esc(i.key)}">${esc(i.title)}</option>`).join("")}</datalist>
     ${issues.length ? issues.map((i) => `<div class="card item">
       <div class="head"><h3>${esc(i.title)}</h3><span class="meta">${esc(i.key)}${i.aliases?.length ? ` · also ${i.aliases.map(esc).join(", ")}` : ""}</span></div>
-      <div class="row" style="align-items:center;gap:.5rem;margin:.3rem 0 .5rem;flex-wrap:wrap"><span class="muted">Road:</span>${kindSel(i)} <span class="muted" style="margin-left:.6rem">Merge into:</span><input list="issueKeys" data-merge="${esc(i.key)}" placeholder="other issue key" style="width:16rem">${i.related?.length ? `<span class="muted" style="margin-left:.6rem">Related: ${i.related.map((k) => `<a href="#/issues">${esc(k)}</a>`).join(", ")}</span>` : ""}</div>
+      <div class="row" style="align-items:center;gap:.5rem;margin:.3rem 0 .5rem;flex-wrap:wrap"><span class="muted">Road:</span>${kindSel(i)} ${projSel(i)} <span class="muted" style="margin-left:.6rem">Merge into:</span><input list="issueKeys" data-merge="${esc(i.key)}" placeholder="other issue key" style="width:16rem">${i.related?.length ? `<span class="muted" style="margin-left:.6rem">Related: ${i.related.map((k) => `<a href="#/issues">${esc(k)}</a>`).join(", ")}</span>` : ""}</div>
       ${i.events.map((ev) => `<div class="issue-ev">${fmtDate(ev.date)} · ${BODY_NAMES[ev.body]} · <strong>${esc(ev.stage)}</strong>${ev.result && ev.result !== "no vote" ? ` (${esc(ev.result)})` : ""} · <a href="#/m/${encodeURIComponent(ev.meetingId)}">${esc(ev.title)}</a>${ev.amount != null ? ` · ${money(ev.amount)}` : ""}</div>`).join("")}
       ${i.nextStep?.text ? `<p><strong>Next:</strong> ${esc(i.nextStep.text)}${i.nextStep.date ? ` (${fmtDate(i.nextStep.date)})` : ""}</p>` : ""}
     </div>`).join("") : `<p class="muted">No issues yet. Click Rebuild if you have published meetings.</p>`}`;
@@ -504,6 +508,16 @@ async function viewIssues() {
   $("#view").onchange = async (e) => {
     const t = e.target.closest("[data-kind]");
     if (t) { await api("issueKind", { key: t.dataset.kind, kind: t.value }); toast("Saved."); return; }
+    const pj = e.target.closest("[data-proj]");
+    if (pj) {
+      try {
+        if (pj.value === "__new") { const title = prompt("Name the project (what a resident would call it):"); if (!title) { pj.value = ""; return; } await api("projectCreate", { title, parts: [pj.dataset.proj] }); }
+        else if (pj.value) await api("projectAdd", { key: pj.value, parts: [pj.dataset.proj] });
+        else await api("projectRemove", { part: pj.dataset.proj });
+        toast("Saved."); viewIssues();
+      } catch (err) { toast(err.message, 6000); }
+      return;
+    }
     const mg = e.target.closest("[data-merge]");
     if (mg && mg.value.trim()) {
       const into = mg.value.trim(), from = mg.dataset.merge;
@@ -512,7 +526,59 @@ async function viewIssues() {
       try { const r = await api("dupeMerge", { into, from }); toast(`Merged: ${r.title} now has ${r.events} items.`); viewIssues(); } catch (err) { toast(err.message); }
     }
   };
-  wireDupes();
+  wireDupes(); wireProjects();
+}
+
+// ---------- Projects: one page above several issues
+function projectsHtml(d) {
+  const review = d.review || [];
+  const prop = (p) => `<div class="card" style="padding:.6rem .8rem;margin:.4rem 0" data-prop="${esc(p.clusterId)}" data-idx="${p.index}">
+    <div class="row" style="gap:.6rem;align-items:center"><input data-ptitle value="${esc(p.title)}" style="flex:1 1 16rem;font-weight:600"><span class="meta">${esc(p.confidence)} confidence</span></div>
+    <div class="muted" style="margin:.3rem 0">${esc(p.reason || "")}</div>
+    ${p.parts.map((x) => `<label class="radio"><input type="checkbox" data-part="${esc(x.key)}" checked> ${esc(x.title)} <span class="meta">· ${x.items} item${x.items === 1 ? "" : "s"} · ${esc(x.from || "")} → ${esc(x.to || "")}${x.inProject ? ` · already in ${esc(x.inProject)}` : ""}</span></label>`).join("")}
+    <div class="actions" style="margin-top:.4rem"><button class="primary" data-pact="apply">Make this project</button><button data-pact="dismiss">Not a project</button></div></div>`;
+  const existing = (pr) => `<details class="pold" style="margin:.3rem 0"><summary><strong>${esc(pr.title)}</strong> <span class="meta">· ${pr.parts.length} part${pr.parts.length === 1 ? "" : "s"} · <a href="/#/i/${encodeURIComponent(pr.key)}" target="_blank" rel="noopener">public page ↗</a></span></summary>
+    <div style="padding:.3rem .6rem .5rem">${pr.parts.map((x) => `<div class="issue-ev">${esc(x.title)} <span class="meta">· ${x.items} items</span> <button class="linkish" data-unpart="${esc(x.key)}">Remove</button></div>`).join("")}
+    <div class="actions" style="margin-top:.5rem"><button class="linkish" data-rename="${esc(pr.key)}">Rename</button><button class="linkish danger" data-ungroup="${esc(pr.key)}">Ungroup (keeps the parts)</button></div></div></details>`;
+  return `<div class="card" style="margin:.8rem 0 1.2rem;padding:.8rem 1rem">
+    <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">
+      <h3 style="margin:0">Projects${review.length ? ` <span class="meta">${review.length} to look at</span>` : ""}${d.pending ? ` <span class="meta">${d.pending} clusters still to check</span>` : ""}</h3>
+      <div class="row" style="gap:.4rem"><button id="projScan">${d.pending ? "Keep checking" : "Find projects"}</button>${d.candidates && !d.pending ? `<button id="projRescan" class="ghost">Start over</button>` : ""}</div>
+    </div>
+    <p class="muted" style="margin:.3rem 0 .6rem">A project is one page above several issues: the jail is its land, its tax, its bonds, its contract and its site plan. This finds issues that share a subject, asks Claude which ones are pieces of one thing, makes the sure ones, and leaves the rest here. You can also pick a project in the dropdown on any issue below.</p>
+    <div id="projLog" class="muted"></div>
+    ${review.map(prop).join("")}
+    ${d.projects?.length ? `<div style="margin-top:.6rem"><div class="meta" style="margin-bottom:.2rem">${d.projects.length} project${d.projects.length === 1 ? "" : "s"}</div>${d.projects.map(existing).join("")}</div>` : review.length || d.pending ? "" : `<p class="muted" style="margin:0">No projects yet.</p>`}
+  </div>`;
+}
+function wireProjects() {
+  const box = $("#projects"); if (!box) return;
+  const refresh = async () => { box.innerHTML = projectsHtml(await api("projects")); wireProjects(); };
+  const log = (t) => { const l = $("#projLog"); if (l) l.textContent = t; };
+  const scan = async (restart = false) => {
+    const btn = $("#projScan"); if (btn) { btn.disabled = true; btn.textContent = "Checking…"; }
+    let guard = 0, applied = [];
+    try {
+      let r = await api("projectScan", { restart }); applied = r.applied || [];
+      while (r.queue && r.queue.pending > 0 && !r.error && guard++ < 60) { log(`${r.queue.pending} clusters still to check; ${applied.length} projects made so far…`); r = await api("projectScan"); applied = applied.concat(r.applied || []); }
+      if (r.error) toast(r.error, 6000);
+      toast(`Done. ${applied.length} project${applied.length === 1 ? "" : "s"} made on their own; ${r.queue?.review?.length || 0} for you to look at.`, 6000);
+    } catch (e) { toast(e.message, 6000); }
+    refresh();
+  };
+  $("#projScan").onclick = () => scan(false);
+  $("#projRescan")?.addEventListener("click", () => { if (confirm("Look at every issue again from scratch? Projects you've already made are kept.")) scan(true); });
+  box.querySelectorAll("[data-pact]").forEach((b) => b.onclick = async () => {
+    const card = b.closest("[data-prop]"); const clusterId = card.dataset.prop, index = +card.dataset.idx;
+    try {
+      if (b.dataset.pact === "apply") { const parts = [...card.querySelectorAll("[data-part]:checked")].map((x) => x.dataset.part); if (parts.length < 2) return toast("Pick at least two parts."); const r = await api("projectApply", { clusterId, index, title: card.querySelector("[data-ptitle]").value.trim(), parts }); toast(`Made “${r.project.title}”.`); }
+      else await api("projectDismiss", { clusterId, index });
+      viewIssues();
+    } catch (e) { toast(e.message, 6000); }
+  });
+  box.querySelectorAll("[data-unpart]").forEach((b) => b.onclick = async () => { await api("projectRemove", { part: b.dataset.unpart }); viewIssues(); });
+  box.querySelectorAll("[data-ungroup]").forEach((b) => b.onclick = async () => { if (!confirm("Remove this project page? Its parts stay as separate issues.")) return; await api("projectDelete", { key: b.dataset.ungroup }); viewIssues(); });
+  box.querySelectorAll("[data-rename]").forEach((b) => b.onclick = async () => { const t = prompt("New name:"); if (!t) return; await api("projectRename", { key: b.dataset.rename, title: t }); viewIssues(); });
 }
 
 // ---- Duplicate issues: scan, then clear the queue
