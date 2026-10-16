@@ -594,17 +594,21 @@ function pageProject(i) {
     <div class="band ${bcls(lastBody)}"><div class="in">
       <div class="kicker"><a href="#/issues" style="color:#fff;text-decoration:none">Issues</a> · Project</div>
       <h1>${esc(i.title)}</h1>
+      ${i.about ? `<p class="lede">${esc(i.about)}</p>` : ""}
       <div class="facts"><span><b>${i.count} decision${i.count === 1 ? "" : "s"}</b> across ${i.parts.length} part${i.parts.length === 1 ? "" : "s"}${i.firstDate ? ` since ${esc(dt(i.firstDate, { month: "long", year: "numeric" }))}` : ""}</span>${i.biggest[0] ? `<span class="pill">${money(i.biggest[0].amount)}</span>` : ""}</div>
     </div></div>
     <div class="two-col ${bcls(lastBody)}">
       <div class="content">
         <div class="sechead" style="margin-top:0"><h2>The pieces</h2><span class="sub">Each one is its own matter with its own road. Open one for the detail.</span></div>
         <div class="grid">${i.parts.map(partCard).join("")}</div>
+        ${i.related?.length ? `<div class="sechead"><h2>Related, not part of it</h2><span class="sub">What the city and county have done about the subject in general</span></div>
+        <div class="grid">${i.related.map((r) => `<a class="card ${bcls(r.bodies?.[r.bodies.length - 1] || "")} ${r.status || ""}" href="#/i/${esc(r.key)}"><b style="font-size:1.05rem">${esc(r.title)}</b><div class="small muted">${esc(list((r.bodies || []).map((b) => BOARD_SHORT[b] || b)))}</div><div class="small muted" style="margin-top:6px">${r.count} step${r.count === 1 ? "" : "s"}${r.last ? ` · ${esc(stageText(r.last.stage))} ${esc(dt(r.last.date, { month: "short", day: "numeric" }))}` : ""}</div></a>`).join("")}</div>` : ""}
         ${i.coming.length ? `<div class="sechead"><h2>Coming up</h2></div>${i.coming.map((c) => `<a class="card board" href="#/m/${esc(c.id)}"><div class="when">${esc(dt(c.date, { weekday: "short", month: "short", day: "numeric" }))}</div><div class="who">${esc(c.bodyName)}</div><ul class="agenda">${c.items.map((it) => `<li>${esc(it.title)}${it.publicHearing ? ` <span class="tag hearing">Public hearing</span>` : ""}</li>`).join("")}</ul></a>`).join("")}` : ""}
         <div class="sechead"><h2>Everything that's happened</h2><span class="sub">Every board, every part, newest first</span></div>
         <ol class="timeline" style="margin-top:16px">${events.map((e) => timelineItem(e, true)).join("")}</ol>
       </div>
       <aside id="issueAside">
+        ${i.note ? `<div class="panel outside"><div class="olabel">From outside the meetings</div><p>${esc(i.note.text)}</p>${i.note.url || i.note.source || i.note.date ? `<div class="small muted">${i.note.url ? `<a href="${esc(i.note.url)}" target="_blank" rel="noopener">${esc(i.note.source || "Source")}</a>` : esc(i.note.source || "")}${i.note.date ? ` · ${esc(dt(i.note.date, { month: "short", day: "numeric", year: "numeric" }))}` : ""}</div>` : ""}<div class="small muted" style="margin-top:6px">Everything else on this page comes from agendas, minutes and meeting video.</div></div>` : ""}
         ${i.next.length ? `<div class="panel" style="padding:14px 16px;background:var(--gold);border-color:#d9b23a"><b>What's next</b>${i.next.map((n) => `<div style="margin-top:4px">${esc(n.title)} <span class="small">(${esc(n.bodyName)})</span><div class="small muted">${esc(n.part)}</div></div>`).join("")}</div>` : ""}
         ${i.biggest.length ? `<div class="panel asidebox"><b>The money</b>${i.biggest.map((b) => `<div style="margin-top:4px"><b>${money(b.amount)}</b> <span class="small muted">· ${esc(dt(b.date, { month: "short", year: "numeric" }))}</span><div class="small"><a href="#/m/${esc(b.meetingId)}#item-${b.idx}">${esc(b.title)}</a></div></div>`).join("")}</div>` : ""}
         <div class="panel" style="padding:14px 16px;margin-top:12px"><b>Boards involved</b><div class="legend" style="flex-direction:column;gap:6px">${(i.bodies || []).map((b) => `<span class="${bcls(b)}"><i class="swatch"></i>${esc(BOARD_SHORT[b] || b)}</span>`).join("")}</div></div>

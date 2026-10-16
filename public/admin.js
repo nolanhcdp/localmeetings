@@ -492,7 +492,7 @@ async function viewIssues() {
   const kindSel = (i) => `<select data-kind="${esc(i.key)}" title="Which road this issue is on (sets the public page's roadmap)"><option value="" ${!i.kindOverride ? "selected" : ""}>Auto${i.guessed ? `: ${esc(kinds.find((k) => k.kind === i.guessed)?.label || i.guessed)}` : ": no roadmap"}</option>${kinds.map((k) => `<option value="${k.kind}" ${i.kindOverride === k.kind ? "selected" : ""}>${esc(k.label)}</option>`).join("")}<option value="none" ${i.kindOverride === "none" ? "selected" : ""}>No roadmap</option></select>`;
   const dupes = await api("dupes");
   const projects = await api("projects");
-  const projSel = (i) => i.isProject ? "" : `<span class="muted" style="margin-left:.6rem">Project:</span><select data-proj="${esc(i.key)}" title="Group this issue under a project page"><option value="">None</option>${projects.projects.map((pr) => `<option value="${esc(pr.key)}" ${i.projectKey === pr.key ? "selected" : ""}>${esc(pr.title)}</option>`).join("")}<option value="__new">New project…</option></select>`;
+  const projSel = (i) => i.isProject ? "" : `<span class="muted" style="margin-left:.6rem">Project:</span><select data-proj="${esc(i.key)}" title="Group this issue under a project page"><option value="">None</option>${projects.projects.map((pr) => `<option value="${esc(pr.key)}" ${i.projectKey === pr.key ? "selected" : ""}>${esc(pr.title)}</option>`).join("")}<option value="__new">New project…</option></select>${i.projectKey ? "" : `<button class="linkish" data-pstart="${esc(i.key)}" title="Claude pulls this issue's handles, searches the archive for them, and brings back the pieces for you to approve">Start a project here</button>`}`;
   $("#view").innerHTML = `
     <h1>Issues</h1>
     <p class="muted">Every published item with an issue key lands on that issue's timeline; these are the public issue pages. Each issue is put on a "road" (rezoning, variance, appropriation…) automatically from its items; fix one with the dropdown. <button id="rebuild">Rebuild all timelines</button></p>
@@ -506,6 +506,14 @@ async function viewIssues() {
       ${i.nextStep?.text ? `<p><strong>Next:</strong> ${esc(i.nextStep.text)}${i.nextStep.date ? ` (${fmtDate(i.nextStep.date)})` : ""}</p>` : ""}
     </div>`).join("") : `<p class="muted">No issues yet. Click Rebuild if you have published meetings.</p>`}`;
   $("#rebuild").onclick = async () => { const r = await api("rebuildIssues"); toast(`Rebuilt ${r.issues} issues.`); viewIssues(); };
+  $("#view").querySelectorAll("[data-pstart]").forEach((b) => b.onclick = async () => {
+    b.disabled = true; b.textContent = "Searching the archive…";
+    try {
+      const r = await api("projectFrom", { key: b.dataset.pstart });
+      toast(`Found ${r.candidates} issue${r.candidates === 1 ? "" : "s"} mentioning the same handles. Review the suggestion at the top of Projects.`, 7000);
+      await viewIssues(); document.getElementById("projects")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (err) { toast(err.message, 8000); b.disabled = false; b.textContent = "Start a project here"; }
+  });
   $("#view").onchange = async (e) => {
     const t = e.target.closest("[data-kind]");
     if (t) { await api("issueKind", { key: t.dataset.kind, kind: t.value }); toast("Saved."); return; }
@@ -536,17 +544,27 @@ function projectsHtml(d) {
   const prop = (p) => `<div class="card" style="padding:.6rem .8rem;margin:.4rem 0" data-prop="${esc(p.clusterId)}" data-idx="${p.index}">
     <div class="row" style="gap:.6rem;align-items:center">${p.existing ? `<span style="flex:1 1 16rem"><span class="muted">Add to</span> <strong>${esc(p.existingTitle)}</strong></span>` : `<input data-ptitle value="${esc(p.title)}" style="flex:1 1 16rem;font-weight:600">`}<span class="meta">${esc(p.confidence)} confidence</span></div>
     <div class="muted" style="margin:.3rem 0">${esc(p.reason || "")}</div>
-    ${p.parts.map((x) => `<label class="radio"><input type="checkbox" data-part="${esc(x.key)}" checked> ${esc(x.title)} <span class="meta">· ${x.items} item${x.items === 1 ? "" : "s"} · ${esc(x.from || "")} → ${esc(x.to || "")}${x.inProject ? ` · already in ${esc(x.inProject)}` : ""}</span></label>`).join("")}
+    ${p.parts.map((x) => `<label class="radio"><input type="checkbox" data-part="${esc(x.key)}" checked> ${esc(x.title)} <span class="meta">· ${x.items} item${x.items === 1 ? "" : "s"} · ${esc(x.from || "")} → ${esc(x.to || "")}${x.inProject ? ` · already in ${esc(x.inProject)}` : ""}${p.why?.[x.key]?.length ? ` · matched: ${esc(p.why[x.key].join(", "))}` : ""}</span></label>`).join("")}
+    ${p.handles?.length ? `<div class="meta" style="margin-top:.3rem">Handles it will keep watching for: ${esc(p.handles.join(" · "))}</div>` : ""}
     <div class="actions" style="margin-top:.4rem"><button class="primary" data-pact="apply">${p.existing ? "Add to project" : "Make this project"}</button><button data-pact="dismiss">${p.existing ? "Doesn't belong" : "Not a project"}</button></div></div>`;
   const existing = (pr) => `<details class="pold" style="margin:.3rem 0"><summary><strong>${esc(pr.title)}</strong> <span class="meta">· ${pr.parts.length} part${pr.parts.length === 1 ? "" : "s"} · <a href="/#/i/${encodeURIComponent(pr.key)}" target="_blank" rel="noopener">public page ↗</a></span></summary>
     <div style="padding:.3rem .6rem .5rem">${pr.parts.map((x) => `<div class="issue-ev">${esc(x.title)} <span class="meta">· ${x.items} items</span> <button class="linkish" data-unpart="${esc(x.key)}">Remove</button></div>`).join("")}
-    <div class="actions" style="margin-top:.5rem"><button class="linkish" data-rename="${esc(pr.key)}">Rename</button><button class="linkish danger" data-ungroup="${esc(pr.key)}">Ungroup (keeps the parts)</button></div></div></details>`;
+    ${pr.related?.length ? `<div class="meta" style="margin:.4rem 0 .1rem">Related, not parts</div>${pr.related.map((x) => `<div class="issue-ev">${esc(x.title)} <span class="meta">· ${x.items} items</span></div>`).join("")}` : ""}
+    <form class="pedit" data-pedit="${esc(pr.key)}" style="margin-top:.6rem;display:grid;gap:.4rem">
+      <label class="meta">First line on the page (what it is, in the record's words)<textarea name="about" rows="2" style="width:100%">${esc(pr.about || "")}</textarea></label>
+      <label class="meta">Handles to watch for (names, ordinance numbers, acreages, places; comma-separated)<input name="handles" style="width:100%" value="${esc((pr.handles || []).join(", "))}"></label>
+      <label class="meta">Related issues (keys, comma-separated; shown as "related, not part of it")<input name="related" list="issueKeys" style="width:100%" value="${esc((pr.related || []).map((x) => x.key).join(", "))}"></label>
+      <div class="meta">One note from outside the meetings (optional; shown set apart, with its source)</div>
+      <input name="noteText" placeholder="One sentence of fact, e.g. a company announcement about this land" style="width:100%" value="${esc(pr.note?.text || "")}">
+      <div class="row" style="gap:.4rem;flex-wrap:wrap"><input name="noteSource" placeholder="Source name (Kokomo Tribune, company release…)" style="flex:1 1 14rem" value="${esc(pr.note?.source || "")}"><input name="noteUrl" placeholder="https://…" style="flex:2 1 18rem" value="${esc(pr.note?.url || "")}"><input name="noteDate" type="date" value="${esc(pr.note?.date || "")}"></div>
+      <div class="actions"><button class="primary" type="submit">Save</button><button type="button" class="linkish" data-rename="${esc(pr.key)}">Rename</button><button type="button" class="linkish" data-handles="${esc(pr.key)}">Check handles now</button><button type="button" class="linkish danger" data-ungroup="${esc(pr.key)}">Ungroup (keeps the parts)</button></div>
+    </form></div></details>`;
   return `<div class="card" style="margin:.8rem 0 1.2rem;padding:.8rem 1rem">
     <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">
       <h3 style="margin:0">Projects${review.length ? ` <span class="meta">${review.length} to look at</span>` : ""}${d.pending ? ` <span class="meta">${d.pending} clusters still to check</span>` : ""}</h3>
       <div class="row" style="gap:.4rem"><button id="projScan">${d.pending ? "Keep checking" : "Find projects"}</button>${d.candidates && !d.pending ? `<button id="projRescan" class="ghost">Start over</button>` : ""}</div>
     </div>
-    <p class="muted" style="margin:.3rem 0 .6rem">A project is one page above several issues: the jail is its land, its tax, its bonds, its contract and its site plan. This finds issues that share a subject, asks Claude which ones are pieces of one thing, makes the sure ones, and leaves the rest here. You can also pick a project in the dropdown on any issue below.</p>
+    <p class="muted" style="margin:.3rem 0 .6rem">A project is one page above several issues: the jail is its land, its tax, its bonds, its contract and its site plan. This finds issues that share a subject, asks Claude which ones are pieces of one thing, makes the sure ones, and leaves the rest here. On any issue below, "Start a project here" has Claude pull that issue's handles (names, ordinance numbers, acreages, places), search every item in the archive for them, and bring back the pieces for you to approve; the project keeps watching for those handles every night.</p>
     <div id="projLog" class="muted"></div>
     ${d.errors?.length ? `<details style="margin:.3rem 0"><summary class="err">${d.errors.length} cluster${d.errors.length === 1 ? "" : "s"} couldn't be checked</summary>${d.errors.map((e) => `<div class="issue-ev"><span class="err">${esc(e.error)}</span><div class="meta">${esc(e.keys.join(" · "))}</div></div>`).join("")}</details>` : ""}
     ${review.map(prop).join("")}
@@ -582,6 +600,14 @@ function wireProjects() {
   box.querySelectorAll("[data-unpart]").forEach((b) => b.onclick = async () => { await api("projectRemove", { part: b.dataset.unpart }); viewIssues(); });
   box.querySelectorAll("[data-ungroup]").forEach((b) => b.onclick = async () => { if (!confirm("Remove this project page? Its parts stay as separate issues.")) return; await api("projectDelete", { key: b.dataset.ungroup }); viewIssues(); });
   box.querySelectorAll("[data-rename]").forEach((b) => b.onclick = async () => { const t = prompt("New name:"); if (!t) return; await api("projectRename", { key: b.dataset.rename, title: t }); viewIssues(); });
+  box.querySelectorAll("form[data-pedit]").forEach((f) => f.onsubmit = async (e) => {
+    e.preventDefault(); const v = (n) => f.elements[n].value.trim();
+    try { await api("projectEdit", { key: f.dataset.pedit, patch: { about: v("about"), handles: v("handles"), related: v("related"), note: { text: v("noteText"), source: v("noteSource"), url: v("noteUrl"), date: v("noteDate") } } }); toast("Saved."); await refresh(); } catch (err) { toast(err.message, 6000); }
+  });
+  box.querySelectorAll("[data-handles]").forEach((b) => b.onclick = async () => {
+    b.disabled = true; b.textContent = "Checking…";
+    try { const r = await api("projectHandles", { maxCalls: 3 }); toast(`${r.applied.length} piece${r.applied.length === 1 ? "" : "s"} added on their own; ${r.review} for you to look at.`, 6000); await refresh(); } catch (err) { toast(err.message, 6000); b.disabled = false; b.textContent = "Check handles now"; }
+  });
 }
 
 // ---- Duplicate issues: scan, then clear the queue
