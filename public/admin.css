@@ -194,3 +194,11 @@ button.linkish { border: 0; background: none; color: var(--accent); padding: 0; 
 .rrow { display: grid !important; grid-template-columns: minmax(0, 1fr) 150px 125px; gap: .5rem; }
 @media (max-width: 520px) { .rrow { grid-template-columns: 1fr 1fr; } .rrow > :first-child { grid-column: 1 / -1; } }
 @media (max-width: 900px) { .trow .tt { flex: 1 1 calc(100% - 30px); } }
+
+/* Gateway data tables */
+.tbl { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.tbl th { text-align: left; font-weight: 600; color: var(--muted, #666); padding: .3rem .5rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.tbl td { padding: .35rem .5rem; border-bottom: 1px solid var(--hair, var(--line)); vertical-align: top; white-space: nowrap; }
+.tbl td:first-child, .tbl td:last-child { white-space: normal; }
+.tbl tr.on td { background: var(--hover, rgba(0,0,0,.04)); }
+a.chip { text-decoration: none; }

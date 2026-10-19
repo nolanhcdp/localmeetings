@@ -458,3 +458,27 @@ tr.muted td { color: var(--none); }
 .panel.outside { padding: 14px 16px; margin-bottom: 12px; border: 1px dashed var(--soft); background: var(--panel); }
 .panel.outside .olabel { font-family: var(--display); font-weight: 700; font-size: 1rem; margin-bottom: 4px; }
 .panel.outside p { margin: 0 0 6px; font-size: .98rem; line-height: 1.45; }
+
+/* Budgets: overview, fund and debt pages (data from /gateway/) */
+.bud .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 0 0 6px; }
+.bud .tile { padding: 14px 16px; }
+.bud .tile .n { font-family: var(--display); font-weight: 700; font-size: 1.7rem; line-height: 1.1; }
+.bud .tile .l { color: var(--faint); margin-top: 4px; font-size: .92rem; }
+.hbars { margin: 8px 0 0; }
+.hbars .brow { display: grid; grid-template-columns: 200px 1fr 90px; gap: 10px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--hair); }
+.hbars .brow:last-child { border: 0; }
+.hbars .bbar { height: 14px; background: var(--board, var(--council)); border-radius: 3px; opacity: .9; }
+.hbars .bval { text-align: right; font-weight: 600; }
+.spark { display: flex; align-items: flex-end; gap: 6px; height: 110px; margin: 10px 0 2px; }
+.spark div { flex: 1; background: var(--board, var(--council)); border-radius: 3px 3px 0 0; position: relative; opacity: .9; }
+.spark div span { position: absolute; top: -20px; left: 0; right: 0; text-align: center; font-size: .8rem; color: var(--soft); }
+.spark div i { position: absolute; bottom: -20px; left: 0; right: 0; text-align: center; font-size: .8rem; font-style: normal; color: var(--faint); }
+.seg { display: inline-flex; border: 1px solid rgba(255,255,255,.7); border-radius: 6px; overflow: hidden; }
+.seg a { padding: 6px 14px; text-decoration: none; color: #fff; font-weight: 600; }
+.seg a.on { background: #fff; color: var(--ink); }
+.funds .frow { display: grid; grid-template-columns: 1fr 110px 110px 70px; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--hair); align-items: baseline; color: inherit; text-decoration: none; }
+.funds a.frow:hover b { text-decoration: underline; }
+.funds .frow b { font-weight: 600; }
+.funds .frow.h { color: var(--faint); font-size: .85rem; border-bottom: 1px solid var(--line); }
+.bud .note { border-left: 4px solid var(--gold, #e2b93b); padding: 10px 14px; background: var(--panel); margin: 12px 0; }
+@media (max-width: 640px) { .hbars .brow { grid-template-columns: 120px 1fr 70px; } .funds .frow { grid-template-columns: 1fr 90px 60px; } .funds .frow .s3 { display: none; } .spark div span { font-size: .68rem; } }

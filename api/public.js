@@ -18,6 +18,7 @@ export async function GET(request) {
       case "officials": out = await P.officials(q("year")); break;
       case "official": out = await P.official(q("body"), q("slug"), q("year")); break;
       case "search": out = await P.search(q("q")); break;
+      case "fundItems": out = await P.fundItems(q("gov"), q("code")); break;
       case "refs": out = await P.refs(); break;
       case "ref": out = await P.ref(q("id")); break;
       default: return fail("Unknown view", 400);

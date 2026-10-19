@@ -720,13 +720,131 @@ async function pageSearch(q) {
   }).join("") : `<p class="muted">Nothing found for “${esc(q)}”.</p>`;
 }
 
-async function pageBudgets() {
-  setNav("budget"); title("Budgets");
-  const d = await api({ view: "refs" });
-  view.innerHTML = `<h1>Budgets</h1><p class="muted">Adopted budgets, read from the official documents and checked to the dollar.</p>
-    <div class="grid">${d.refs.map((r) => `<a class="card board ${/county/i.test(r.title) ? "b-council" : "b-city-council"}" href="#/budget/${esc(r.id)}"><h3>${esc(r.title)}</h3><div class="amount">${money(r.totals?.allFunds)}</div><div class="meta" style="margin-top:6px">${esc(r.docNumber || "")}${r.adopted ? ` · adopted ${esc(dt(r.adopted, { month: "short", day: "numeric", year: "numeric" }))}` : ""}</div></a>`).join("") || `<p class="muted">None yet.</p>`}</div>`;
+// ---- Budgets: the state's own forms for the city and the county (Indiana Gateway), reconciled by mac/gateway-build.mjs
+// into static files under /gateway/. The overview is the ten-second read; a fund page is where the digging happens.
+const GWU = { city: "kokomo", county: "howard" };
+const GW_CACHE = {};
+async function gwLoad(name) { if (GW_CACHE[name]) return GW_CACHE[name]; const r = await fetch(`/gateway/${name}.json`); if (!r.ok) throw new Error("Budget data isn't published yet."); return (GW_CACHE[name] = await r.json()); }
+const Mshort = (n) => n == null ? "—" : Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(Math.abs(n) >= 1e8 ? 0 : 1)}M` : Math.abs(n) >= 1e3 ? `$${Math.round(n / 1e3)}K` : money(n);
+const pctChange = (a, b) => b ? `${a >= b ? "+" : "−"}${Math.abs((a / b - 1) * 100).toFixed(1)}%` : "";
+const KEEP_CAPS = /^(TIF|LIT|CEDIT|EDIT|CASA|VOCA|PSAP|MVH|ARP|BAN|SRF|WWU|YMCA|FTA|HC|CO|IV-D|II|I|JDAI|PHEP|STOP|EDA)$/i;
+const tc = (s) => String(s || "").replace(/\s*\(.*?\)/g, "").toLowerCase().replace(/\b([a-z][a-z0-9'-]*)/g, (w) => KEEP_CAPS.test(w) ? w.toUpperCase() : /^(and|of|the|for|to|a|in|on|by)$/.test(w) ? w : w[0].toUpperCase() + w.slice(1)).replace(/^(and|of|the|for|to|a|in|on|by) /, (m) => m[0].toUpperCase() + m.slice(1)).replace(/Tif\b/g, "TIF").replace(/\bLit\b/g, "LIT").replace(/\bCedit\b/g, "CEDIT").replace(/\bUs 31\b/g, "US 31");
+const CAT_LABEL = { "PERSONAL SERVICES": "People: pay and benefits", "SUPPLIES": "Supplies", "SERVICES AND CHARGES": "Services and contracts", "CAPITAL OUTLAYS": "Buildings, equipment, projects", "DEBT SERVICE": "Debt payments", "PROPERTY TAX CAP": "Property tax cap" };
+const RCPT_LABEL = { "Taxes and Intergovernmental": "Property and income taxes, state money", "Charges for Services": "Fees for services", "Licenses and Permits": "Licenses and permits", "Fines, Forfeitures, and Fees": "Fines and fees", "Other Receipts": "Bond proceeds, transfers, other", "Utility Penalties": "Utility penalties" };
+const hbars = (rows, max) => `<div class="hbars">${rows.map(([l, v]) => `<div class="brow"><span>${esc(l)}</span><div><div class="bbar" style="width:${Math.max(1, (v / max) * 100)}%"></div></div><span class="bval">${Mshort(v)}</span></div>`).join("")}</div>`;
+function fundBlurb(f) { // deterministic, from the record; a written description can replace it later
+  if (f.tif) return "A TIF district: property-tax growth inside the district, spent inside the district";
+  if (/general/i.test(f.name)) return f.top ? `Day-to-day operations; biggest piece is ${tc(f.top.name).toLowerCase()}` : "Day-to-day operations";
+  if (/pension/i.test(f.name)) return "Pension payments to retired officers and their families";
+  if (/motor vehicle highway|local road/i.test(f.name)) return "Streets and roads, paid mostly from state gas-tax money";
+  return f.top && !/no department|miscellaneous/i.test(f.top.name) ? `Biggest piece: ${tc(f.top.name).toLowerCase()}` : "";
 }
-
+async function pageBudgets(gov = "city", sub = "", arg = "") {
+  setNav("budget");
+  if (sub === "fund" && arg) return pageFund(gov, arg);
+  if (sub === "debt") return pageDebt(gov);
+  const d = await gwLoad(`site-${GWU[gov] || "kokomo"}`); gov = d.gov;
+  const refs = await api({ view: "refs" }).catch(() => ({ refs: [] }));
+  const years = d.years.filter((y) => y.year >= 2020); const y = years.at(-1), p = years.at(-2);
+  const act = d.years.slice().reverse().find((x) => x.actual)?.actual; const actYear = d.years.slice().reverse().find((x) => x.actual)?.year;
+  const debt = d.debt.at(-1);
+  const who = gov === "city" ? "Kokomo" : "Howard County", cls = gov === "city" ? "b-city-council" : "b-council";
+  title(`${who} budgets`);
+  const cats = Object.entries(y.categories || {}).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+  const catMax = cats[0]?.[1] || 1;
+  const spark = years.map((x) => x.coreTotal); const smax = Math.max(...spark);
+  const jump = p && y.total / p.total > 1.15 && y.tifTotal > 0 ? y : years.find((x, i) => i && x.total / years[i - 1].total > 1.15 && x.tifTotal > (years[i - 1].tifTotal || 0));
+  const jp = jump ? years[years.indexOf(jump) - 1] : null;
+  const docs = (refs.refs || []).filter((r) => (gov === "county") === /county/i.test(r.title));
+  const vote = docs.find((r) => r.meetingId);
+  const actY = d.years.slice().reverse().find((x) => x.actual); // spent-last-year comes from the newest year that has a financial report
+  const spentOf = (code) => actY?.funds.find((x) => x.code === code)?.spent ?? null;
+  const live = y.funds.filter((f) => f.adopted > 0), zero = y.funds.filter((f) => !(f.adopted > 0));
+  const frow = (f) => `<a class="frow" href="#/budget/${gov}/fund/${esc(f.code)}" data-q="${esc(f.name.toLowerCase())}"><span><b>${esc(tc(f.name))}</b>${fundBlurb(f) ? `<div class="small muted">${esc(fundBlurb(f))}</div>` : ""}</span><span>${Mshort(f.adopted)}</span><span class="s3">${spentOf(f.code) != null ? Mshort(spentOf(f.code)) : "<span class='muted small'>not paired</span>"}</span><span>${f.rate ? f.rate.toFixed(2) : "—"}</span></a>`;
+  const fundRows = live.map(frow).join("") + (zero.length ? `<details class="zero"><summary class="small muted">${zero.length} funds carried at $0 this year</summary>${zero.map(frow).join("")}</details>` : "");
+  view.innerHTML = `
+    <div class="band ${cls}"><div class="in">
+      <div class="kicker">Budgets</div>
+      <h1>Where ${who}'s money goes</h1>
+      <p class="lede">The ${gov === "city" ? "city" : "county"} plans to spend <b>${money(y.coreTotal)}</b> in ${y.year} on the things it does every year${gov === "city" ? ": police, fire, streets, parks, trash" : ": the sheriff and jail, courts, roads, the health department"}. Counting every fund it budgets, the full adopted budget is ${money(y.total)}. The tax rate is $${y.rate.toFixed(2)} per $100 of assessed value.</p>
+      <div class="facts"><span class="seg"><a class="${gov === "city" ? "on" : ""}" href="#/budget/city">City of Kokomo</a><a class="${gov === "county" ? "on" : ""}" href="#/budget/county">Howard County</a></span>${vote ? `<span>Adopted ${esc(dt(vote.adopted, { month: "short", day: "numeric", year: "numeric" }))} · <a href="#/m/${esc(vote.meetingId)}" style="color:#fff">the vote</a></span>` : ""}</div>
+    </div></div>
+    <div class="two-col ${cls} bud">
+    <div class="content">
+      <div class="tiles">
+        <div class="panel tile"><div class="n">${Mshort(y.coreTotal)}</div><div class="l">Day-to-day budget, ${y.year}</div></div>
+        ${p ? `<div class="panel tile"><div class="n">${pctChange(y.coreTotal, p.coreTotal)}</div><div class="l">vs. ${p.year}, same funds</div></div>` : ""}
+        <div class="panel tile"><div class="n">$${y.rate.toFixed(2)}</div><div class="l">Tax rate per $100</div></div>
+        ${debt ? `<div class="panel tile"><div class="n">${Mshort(debt.outstanding)}</div><div class="l">Debt at end of ${debt.year}</div></div>` : ""}
+      </div>
+      ${cats.length ? `<div class="sechead"><h2>What it pays for</h2><span class="sub">${y.year} adopted${y.detailCoverage < 0.98 ? `, the ${Math.round(y.detailCoverage * 100)}% of funds with line-item detail on file` : ", all funds"}</span></div>
+      ${hbars(cats.map(([k, v]) => [CAT_LABEL[k] || k, v]), catMax)}` : ""}
+      <div class="sechead"><h2>The same budget, year by year</h2><span class="sub">Only funds the ${gov} budgets every year, so the line compares like with like</span></div>
+      <div class="panel" style="padding:30px 18px 28px"><div class="spark">${years.map((x) => `<div style="height:${Math.max(4, (x.coreTotal / smax) * 100)}%"><span>${Mshort(x.coreTotal)}</span><i>${x.year}</i></div>`).join("")}</div></div>
+      ${jump && jp ? `<div class="note"><b>Why the headline number jumped in ${jump.year}.</b> The full adopted budget went from ${money(jp.total)} to ${money(jump.total)} in one year. Most of that is bookkeeping: starting in ${jump.year} the ${gov} began including ${jump.fundChanges?.added?.length || "more"} funds in the forms it files with the state${jump.tifTotal ? `, including its TIF districts (${money(jump.tifTotal)})` : ""}. On the funds it budgets every year, spending moved ${pctChange(jump.coreTotal, jp.coreTotal)}.</div>` : ""}
+      <div class="sechead"><h2>Every fund</h2><span class="sub">Open one for its departments, line items and the votes that touched it.</span></div>
+      <div class="ibar" style="margin-bottom:6px"><input id="fundQ" class="search" placeholder="Search funds (police, TIF, parks…)" style="width:100%;max-width:420px"></div>
+      <div class="funds"><div class="frow h"><span>Fund</span><span>${y.year} budget</span><span class="s3">Spent in ${actYear || "—"}</span><span>Rate</span></div>${fundRows}</div>
+      ${docs.length ? `<div class="sechead"><h2>The budget documents</h2><span class="sub">Read as adopted, checked to the dollar</span></div><div class="grid">${docs.map((r) => `<a class="card board ${cls}" href="#/budget/${esc(r.id)}"><h3>${esc(r.title)}</h3><div class="amount">${money(r.totals?.allFunds)}</div><div class="meta" style="margin-top:6px">${esc(r.docNumber || "")}${r.adopted ? ` · adopted ${esc(dt(r.adopted, { month: "short", day: "numeric", year: "numeric" }))}` : ""}</div></a>`).join("")}</div>` : ""}
+    </div>
+    <aside>
+      ${act ? `<div class="panel asidebox"><b>Where it comes from</b><div class="small muted" style="margin-bottom:6px">${actYear}, all ${gov} funds${act.passThrough > 1e6 ? ", including money collected for others" : ""}</div>${Object.entries(act.byReceiptClass || {}).filter(([, v]) => v > 1e5).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<div>${esc(RCPT_LABEL[k] || k)} <b>${Mshort(v)}</b></div>`).join("")}</div>
+      <div class="panel asidebox"><b>Actually spent in ${actYear}</b><div>On operations <b>${Mshort(act.operations)}</b></div>${act.passThrough > 1e6 ? `<div>Passed through to others <b>${Mshort(act.passThrough)}</b><div class="small muted">${gov === "county" ? "Property taxes the county collects and hands to the city, schools, townships and library, plus clearing accounts." : "Payroll and other clearing accounts."}</div></div>` : ""}</div>` : ""}
+      ${debt ? `<div class="panel asidebox"><b>What the ${gov} owes</b><div class="small muted" style="margin-bottom:6px">End of ${debt.year}</div>${debtGroups(debt.items).map(([k, v]) => `<div>${esc(k)} <b>${Mshort(v)}</b></div>`).join("")}<div class="small" style="margin-top:6px"><a href="#/budget/${gov}/debt">All ${debt.items.length} bonds and loans →</a></div></div>` : ""}
+      <div class="panel asidebox small muted">Source: Indiana Gateway for Government Units, the forms the ${gov} files with the state, checked against each other by Second Reading. Built ${esc(dt(d.builtAt.slice(0, 10), { month: "short", day: "numeric", year: "numeric" }))}.</div>
+    </aside></div>`;
+  const q = document.getElementById("fundQ");
+  q.oninput = () => { const t = q.value.trim().toLowerCase(); view.querySelectorAll(".frow[data-q]").forEach((r) => { r.style.display = !t || r.dataset.q.includes(t) ? "" : "none"; }); };
+}
+function debtGroups(items) {
+  const g = {};
+  for (const d of items) { const k = /wastewater|sewer|srf|wwu/i.test(d.description + d.enterprise) ? "Wastewater bonds and state loans" : /tif|redev|eco dev|edit|economic/i.test(d.description) ? "TIF and development bonds" : /lease/i.test(d.description + d.cls) ? "Lease-backed bonds" : d.cls; g[k] = (g[k] || 0) + d.outstanding; }
+  return Object.entries(g).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+}
+async function pageDebt(gov) {
+  const d = await gwLoad(`site-${GWU[gov] || "kokomo"}`); const who = gov === "city" ? "Kokomo" : "Howard County", cls = gov === "city" ? "b-city-council" : "b-council";
+  title(`What ${who} owes`);
+  const yrs = d.debt.filter((x) => x.year >= 2018); const last = yrs.at(-1); const max = Math.max(...yrs.map((x) => x.outstanding), 1);
+  view.innerHTML = `<div class="band ${cls}"><div class="in"><div class="kicker"><a href="#/budget/${gov}" style="color:#fff;text-decoration:none">Budgets</a> · Debt</div><h1>What ${who} owes</h1><p class="lede">${money(last.outstanding)} outstanding at the end of ${last.year} across ${last.items.length} bonds and loans, as reported to the state. The payment due in ${last.year + 1}: ${money(last.items.reduce((a, x) => a + x.dueNextYear, 0))}.</p></div></div>
+    <div class="two-col ${cls} bud"><div class="content">
+      <div class="sechead" style="margin-top:0"><h2>Year by year</h2><span class="sub">Principal outstanding at year end</span></div>
+      <div class="panel" style="padding:30px 18px 28px"><div class="spark">${yrs.map((x) => `<div style="height:${Math.max(4, (x.outstanding / max) * 100)}%"><span>${Mshort(x.outstanding)}</span><i>${x.year}</i></div>`).join("")}</div></div>
+      <div class="sechead"><h2>Every bond and loan, ${last.year}</h2><span class="sub">Biggest first. Search the site for the ordinance that approved each.</span></div>
+      <div class="funds"><div class="frow h"><span>What</span><span>Outstanding</span><span class="s3">Due ${last.year + 1}</span><span>Kind</span></div>${last.items.slice().sort((a, b) => b.outstanding - a.outstanding).map((x) => `<a class="frow" href="#/search?q=${encodeURIComponent(x.description.replace(/[^\w\s]/g, " ").split(/\s+/).slice(0, 4).join(" "))}"><span><b>${esc(x.description)}</b>${x.enterprise && !/governmental/i.test(x.enterprise) ? `<div class="small muted">${esc(tc(x.enterprise))}</div>` : ""}</span><span>${Mshort(x.outstanding)}</span><span class="s3">${x.dueNextYear ? Mshort(x.dueNextYear) : "—"}</span><span class="small muted">${esc(x.cls)}</span></a>`).join("")}</div>
+    </div><aside><div class="panel asidebox"><b>By kind</b>${debtGroups(last.items).map(([k, v]) => `<div>${esc(k)} <b>${Mshort(v)}</b></div>`).join("")}</div>
+    ${gov === "county" ? `<div class="panel asidebox small">The county's jail is financed through a building corporation lease rather than county bonds, so it doesn't appear here as county debt.</div>` : ""}
+    <div class="panel asidebox small muted">Source: the ${gov}'s annual financial report to the State Board of Accounts, via Indiana Gateway.</div></aside></div>`;
+}
+async function pageFund(gov, code) {
+  const unit = GWU[gov] || "kokomo"; const f = (await gwLoad(`funds-${unit}`))[code]; if (!f) throw new Error("No such fund."); const who = gov === "city" ? "Kokomo" : "Howard County", cls = gov === "city" ? "b-city-council" : "b-council";
+  title(`${tc(f.name)} · ${who} budgets`);
+  const hist = f.history.filter((h) => h.year >= 2018); const cur = hist.at(-1); const prev = hist.at(-2);
+  const max = Math.max(...hist.map((h) => h.adopted || 0), 1);
+  const cats = Object.entries(cur.categories || {}).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+  const depts = (cur.departments || []).filter((d) => !/^no department$/i.test(d.name) || cur.departments.length === 1).slice(0, 12);
+  const lastAct = f.history.slice().reverse().find((h) => h.actual);
+  const lines = f.lines.at(-1); const topLines = lines ? lines.lines.slice().sort((a, b) => b.adopted - a.adopted).slice(0, 25) : [];
+  // Items the drafter tagged with this exact fund; if there are none yet, fall back to a name search
+  let items = (await api({ view: "fundItems", gov, code }).catch(() => ({ items: [] }))).items || [];
+  let tagged = items.length > 0;
+  if (!items.length) { const related = await api({ view: "search", q: f.name.replace(/\(.*?\)/g, "").split(/[,\/]/)[0].trim() }).catch(() => ({ results: [] })); items = (related.results || []).filter((r) => r.type === "item").slice(0, 8); }
+  view.innerHTML = `<div class="band ${cls}"><div class="in"><div class="kicker"><a href="#/budget/${gov}" style="color:#fff;text-decoration:none">Budgets</a> · ${who} · Fund ${esc(f.code)}</div><h1>${esc(tc(f.name))}</h1>
+    <p class="lede">${money(cur.adopted)} adopted for ${cur.year}${prev ? `, ${pctChange(cur.adopted, prev.adopted)} from ${prev.year}` : ""}.${cur.rate ? ` Its share of the tax rate is $${cur.rate.toFixed(4)} per $100.` : " No property-tax rate of its own."}${lastAct ? ` In ${lastAct.year} it actually spent ${money(lastAct.actual.disbursements)}.` : ""}</p>
+    ${f.tif ? `<div class="facts"><span>A TIF district: property-tax growth inside the district's lines is kept here and spent here instead of going to the general fund, schools and county.</span></div>` : ""}</div></div>
+    <div class="two-col ${cls} bud"><div class="content">
+      <div class="sechead" style="margin-top:0"><h2>Year by year</h2><span class="sub">Adopted budget${lastAct ? "; hover for what was actually spent" : ""}</span></div>
+      <div class="panel" style="padding:30px 18px 28px"><div class="spark">${hist.map((h) => `<div style="height:${Math.max(4, ((h.adopted || 0) / max) * 100)}%" title="${h.year}: adopted ${money(h.adopted)}${h.actual ? `, spent ${money(h.actual.disbursements)}` : ""}"><span>${Mshort(h.adopted)}</span><i>${h.year}</i></div>`).join("")}</div></div>
+      ${depts.length > 1 ? `<div class="sechead"><h2>By department, ${cur.year}</h2></div>${hbars(depts.map((d) => [tc(d.name), d.total]), depts[0].total)}` : ""}
+      ${cats.length ? `<div class="sechead"><h2>What kind of spending</h2><span class="sub">${cur.year} adopted</span></div>${hbars(cats.map(([k, v]) => [CAT_LABEL[k] || k, v]), cats[0][1])}` : cur.detail === "mismatch" ? `<p class="muted">The line items the ${gov} filed for this fund don't add up to the adopted total, so only the total is shown.</p>` : ""}
+      ${topLines.length ? `<div class="sechead"><h2>Biggest line items, ${lines.year}</h2><span class="sub">${lines.lines.length} lines on file; the ${topLines.length} largest</span></div>
+      <div class="funds"><div class="frow h"><span>Line</span><span>Adopted</span><span class="s3">Published</span><span></span></div>${topLines.map((l) => `<div class="frow"><span><b>${esc(l.item)}</b><div class="small muted">${esc(tc(l.department))}${l.category ? ` · ${esc((CAT_LABEL[l.category] || l.category).toLowerCase())}` : ""}</div></span><span>${money(l.adopted)}</span><span class="s3 ${l.published !== l.adopted ? "" : "muted"}">${l.published !== l.adopted ? money(l.published) : "same"}</span><span></span></div>`).join("")}</div>
+      <p class="small muted">"Published" is the amount advertised before the hearing; "adopted" is what the ${gov === "city" ? "council" : "county council"} approved.</p>` : ""}
+      ${items.length ? `<div class="sechead"><h2>On the record</h2><span class="sub">${tagged ? "Meeting items charged to this fund" : "Meeting items that mention this fund"}</span></div><div class="grid">${items.map((r) => `<a class="card board ${bcls(r.body || "")}" href="#/m/${esc(r.meetingId)}#item-${r.idx}"><div class="meta"><b style="color:var(--ink)">${esc(dt(r.date))}</b><span class="who">${esc(r.bodyName)}</span></div><h3 style="margin-top:6px">${esc(r.title)}</h3></a>`).join("")}</div>` : ""}
+    </div><aside>
+      ${lastAct ? `<div class="panel asidebox"><b>Actually spent, ${lastAct.year}</b><div>${money(lastAct.actual.disbursements)} <span class="small muted">of ${money(f.history.find((h) => h.year === lastAct.year).adopted)} budgeted</span></div>${Object.entries(lastAct.actual.byClass || {}).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, v]) => `<div class="small">${esc(k)} <b>${Mshort(v)}</b></div>`).join("")}<div class="small muted" style="margin-top:6px">Cash left at year end: ${money(lastAct.actual.endCash)}. From the ${gov}'s financial report, fund "${esc(lastAct.actual.name)}".</div></div>` : `<div class="panel asidebox small muted">This fund isn't paired with the ${gov}'s financial report yet, so only the budget is shown.</div>`}
+      <div class="panel asidebox small muted">Source: Budget Form 1 and 4B as filed with the state, Indiana Gateway.</div>
+    </aside></div>`;
+}
 // Squarified-ish treemap on a 12-column grid: big boxes first, then rows of small ones.
 function treemap(depts, opts) {
   const total = opts.total;
@@ -1014,8 +1132,9 @@ async function route() {
     else if (parts[0] === "officials") await pageOfficials(parts[1]);
     else if (parts[0] === "o") await pageOfficial(parts[1], parts[2], parts[3]);
     else if (parts[0] === "search") await pageSearch(parts[1] || "");
+    else if (parts[0] === "budget" && (parts[1] === "city" || parts[1] === "county")) await pageBudgets(parts[1], parts[2] || "", parts[3] || "");
     else if (parts[0] === "budget" && parts[1]) await pageBudget(parts[1]);
-    else if (parts[0] === "budget") await pageBudgets();
+    else if (parts[0] === "budget") await pageBudgets("city");
     else if (parts[0] === "about") pageAbout();
     else if (parts[0] === "alerts") pageAlerts();
     else view.innerHTML = `<h1>Page not found</h1><p><a href="#/">Go to the home page</a></p>`;
