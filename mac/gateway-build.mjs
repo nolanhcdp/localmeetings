@@ -130,6 +130,46 @@ function buildBudget(unit, def, data) {
   return { unit, label: def.label, gov: def.gov, unitCode: def.unit_code, source: "Indiana Gateway for Government Units, Budget Data (Forms 1, 2, 4B), bulk download", builtAt: new Date().toISOString(), coreFunds: [...core], years: list };
 }
 
+// ---- Departments: the same lines grouped by department across every fund, so "the fire department" is one page.
+// Names drift between forms and years ("POLICE DEPARTMENT (TOWN MARSHAL)" / "Police Department (Town Marshall)"), so a
+// department is keyed by its normalized name, with a short alias list for the known variants.
+const DEPT_ALIAS = { "clerk treasurer": "clerk", "parks": "parks and recreation", "police department town marshal": "police department" };
+const SKIP_DEPT = /^(no department|miscellaneous|property tax cap.*)$/;
+const deptKey = (name) => { const k = clean(name).toLowerCase().replace(/&/g, " and ").replace(/\(.*?\)/g, " ").replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim(); return DEPT_ALIAS[k] || k; };
+const titleCase = (s) => clean(s).replace(/\s*\(.*?\)/g, "").toLowerCase().replace(/\b([a-z])/g, (c) => c.toUpperCase()).replace(/\bAnd\b/g, "and").replace(/\bOf\b/g, "of");
+function buildDepartments(budget, actuals) {
+  const depts = new Map();
+  const D = (k, name) => depts.get(k) || depts.set(k, { key: k, name: titleCase(name), years: new Map() }).get(k);
+  for (const y of budget.years) for (const f of y.funds) {
+    if (!f.lines) continue; // only funds whose lines reconcile
+    for (const l of f.lines) {
+      const k = deptKey(l.department); if (!k || SKIP_DEPT.test(k)) continue;
+      const d = D(k, l.department); const yr = d.years.get(y.year) || d.years.set(y.year, { year: y.year, adopted: 0, published: 0, byFund: {}, categories: {}, lines: [] }).get(y.year);
+      yr.adopted = r2(yr.adopted + l.adopted); yr.published = r2(yr.published + l.published);
+      const bf = yr.byFund[f.code] || (yr.byFund[f.code] = { code: f.code, name: f.name, amount: 0 }); bf.amount = r2(bf.amount + l.adopted);
+      yr.categories[l.category || "Other"] = r2((yr.categories[l.category || "Other"] || 0) + l.adopted);
+      yr.lines.push({ fund: f.code, fundName: f.name, item: l.item, category: l.category, published: l.published, adopted: l.adopted });
+    }
+  }
+  // Actual spending by department (the financial report only breaks the general fund down by department)
+  for (const a of actuals) for (const f of a.funds) for (const [name, amt] of Object.entries(f.byDepartment || {})) {
+    const k = deptKey(name); if (!k || SKIP_DEPT.test(k)) continue;
+    const d = D(k, name); const yr = d.years.get(a.year) || d.years.set(a.year, { year: a.year, adopted: null, published: null, byFund: {}, categories: {}, lines: [] }).get(a.year);
+    yr.actual = r2((yr.actual || 0) + amt); (yr.actualByFund ||= {})[f.code] = { name: f.name, amount: amt };
+  }
+  const out = {}; const index = [];
+  for (const d of depts.values()) {
+    const years = [...d.years.values()].sort((a, b) => a.year - b.year).map((y) => ({ ...y, byFund: Object.values(y.byFund).sort((p, q) => q.amount - p.amount), lines: y.lines.sort((p, q) => q.adopted - p.adopted) }));
+    const keepLines = years.at(-1)?.year || 0; // full lines for the last three budget years only
+    for (const y of years) if (y.year < keepLines - 2) y.lines = y.lines.slice(0, 12);
+    const latest = years.slice().reverse().find((y) => y.adopted != null); const lastAct = years.slice().reverse().find((y) => y.actual != null);
+    if (!latest || latest.adopted <= 0) continue;
+    out[d.key] = { key: d.key, name: d.name, years };
+    index.push({ key: d.key, name: d.name, year: latest.year, adopted: latest.adopted, funds: latest.byFund.map((f) => f.name), actualYear: lastAct?.year || null, actual: lastAct?.actual ?? null });
+  }
+  return { index: index.sort((a, b) => b.adopted - a.adopted), depts: out };
+}
+
 // ---- Annual financial reports → actuals per unit, per year (when the files are present)
 function buildActuals(data) {
   const years = new Map(); const Y = (y) => years.get(y) || years.set(y, { year: +y, funds: new Map(), debt: [], leases: [], checks: [] }).get(y);
@@ -216,6 +256,7 @@ async function main() {
       allFunds[code] = { unit: u, code, name: lf.name, core: lf.core, tif: lf.tif, history: hist, lines };
     }
     fs.writeFileSync(path.join(OUT, `funds-${u}.json`), JSON.stringify(allFunds));
+    fs.writeFileSync(path.join(OUT, `depts-${u}.json`), JSON.stringify(buildDepartments(budget, actuals)));
     for (const stale of [path.join(OUT, `${u}.json`), path.join(OUT, u)]) fs.rmSync(stale, { recursive: true, force: true }); // old layout
     const problems = budget.years.flatMap((y) => y.checks.map((c) => ({ year: y.year, ...c }))).concat(actuals.flatMap((y) => y.checks.map((c) => ({ year: y.year, ...c }))));
     index.units[u] = { label: def.label, gov: def.gov, unitCode: def.unit_code, years: budget.years.map((y) => ({ year: y.year, total: y.total, coreTotal: y.coreTotal, tifTotal: y.tifTotal, rate: y.rate, levy: y.levy, fundCount: y.fundCount, detailCoverage: y.detailCoverage, actualTotal: y.actualTotal ?? null, actualAllFunds: y.actualAllFunds ?? null, actualOperations: y.actualOperations ?? null, actualPassThrough: y.actualPassThrough ?? null, actualMatchedFunds: y.actualMatchedFunds ?? null, checks: y.checks.length, fundChanges: y.fundChanges || null, categories: y.categories,
