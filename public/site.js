@@ -739,13 +739,20 @@ function fundBlurb(f) { // deterministic, from the record; a written description
   if (/motor vehicle highway|local road/i.test(f.name)) return "Streets and roads, paid mostly from state gas-tax money";
   return f.top && !/no department|miscellaneous/i.test(f.top.name) ? `Biggest piece: ${tc(f.top.name).toLowerCase()}` : "";
 }
-async function pageBudgets(gov = "city", sub = "", arg = "") {
+async function pageBudgets(gov = "city", sub = "", arg = "", params = new URLSearchParams()) {
   setNav("budget");
   if (sub === "fund" && arg) return pageFund(gov, arg);
   if (sub === "debt") return pageDebt(gov);
+  if (sub === "departments") return pageDepartments(gov);
+  if (sub === "dept" && arg) return pageDepartment(gov, arg);
   const d = await gwLoad(`site-${GWU[gov] || "kokomo"}`); gov = d.gov;
   const refs = await api({ view: "refs" }).catch(() => ({ refs: [] }));
-  const years = d.years.filter((y) => y.year >= 2020); const y = years.at(-1), p = years.at(-2);
+  const allYears = d.years.filter((y) => y.year >= 2012);
+  const want = parseInt(params.get("y"), 10);
+  const y = allYears.find((x) => x.year === want) || allYears.at(-1); const yi = allYears.indexOf(y); const p = allYears[yi - 1];
+  const years = allYears.filter((x) => x.year >= Math.min(2020, y.year) && x.year <= Math.max(y.year, 2020) + 6).slice(-7);
+  const isLatest = y === allYears.at(-1);
+  const yearPicker = `<select id="yearPick" class="ypick">${allYears.slice().reverse().map((x) => `<option value="${x.year}" ${x.year === y.year ? "selected" : ""}>${x.year}</option>`).join("")}</select>`;
   const act = d.years.slice().reverse().find((x) => x.actual)?.actual; const actYear = d.years.slice().reverse().find((x) => x.actual)?.year;
   const debt = d.debt.at(-1);
   const who = gov === "city" ? "Kokomo" : "Howard County", cls = gov === "city" ? "b-city-council" : "b-council";
@@ -757,7 +764,7 @@ async function pageBudgets(gov = "city", sub = "", arg = "") {
   const jp = jump ? years[years.indexOf(jump) - 1] : null;
   const docs = (refs.refs || []).filter((r) => (gov === "county") === /county/i.test(r.title));
   const vote = docs.find((r) => r.meetingId);
-  const actY = d.years.slice().reverse().find((x) => x.actual); // spent-last-year comes from the newest year that has a financial report
+  const actY = y.actual ? y : d.years.slice().reverse().find((x) => x.actual); // this year's actual spending when the report is in, else the newest report
   const spentOf = (code) => actY?.funds.find((x) => x.code === code)?.spent ?? null;
   const live = y.funds.filter((f) => f.adopted > 0), zero = y.funds.filter((f) => !(f.adopted > 0));
   const frow = (f) => `<a class="frow" href="#/budget/${gov}/fund/${esc(f.code)}" data-q="${esc(f.name.toLowerCase())}"><span><b>${esc(tc(f.name))}</b>${fundBlurb(f) ? `<div class="small muted">${esc(fundBlurb(f))}</div>` : ""}</span><span>${Mshort(f.adopted)}</span><span class="s3">${spentOf(f.code) != null ? Mshort(spentOf(f.code)) : "<span class='muted small'>not paired</span>"}</span><span>${f.rate ? f.rate.toFixed(2) : "—"}</span></a>`;
@@ -766,8 +773,8 @@ async function pageBudgets(gov = "city", sub = "", arg = "") {
     <div class="band ${cls}"><div class="in">
       <div class="kicker">Budgets</div>
       <h1>Where ${who}'s money goes</h1>
-      <p class="lede">The ${gov === "city" ? "city" : "county"} plans to spend <b>${money(y.coreTotal)}</b> in ${y.year} on the things it does every year${gov === "city" ? ": police, fire, streets, parks, trash" : ": the sheriff and jail, courts, roads, the health department"}. Counting every fund it budgets, the full adopted budget is ${money(y.total)}. The tax rate is $${y.rate.toFixed(2)} per $100 of assessed value.</p>
-      <div class="facts"><span class="seg"><a class="${gov === "city" ? "on" : ""}" href="#/budget/city">City of Kokomo</a><a class="${gov === "county" ? "on" : ""}" href="#/budget/county">Howard County</a></span>${vote ? `<span>Adopted ${esc(dt(vote.adopted, { month: "short", day: "numeric", year: "numeric" }))} · <a href="#/m/${esc(vote.meetingId)}" style="color:#fff">the vote</a></span>` : ""}</div>
+      <p class="lede">The ${gov === "city" ? "city" : "county"} ${isLatest ? "plans to spend" : "budgeted"} <b>${money(y.coreTotal)}</b> ${isLatest ? "in" : "for"} ${y.year} on the things it does every year${gov === "city" ? ": police, fire, streets, parks, trash" : ": the sheriff and jail, courts, roads, the health department"}. Counting every fund it budgets, the full adopted budget is ${money(y.total)}. The tax rate is $${y.rate.toFixed(2)} per $100 of assessed value.</p>
+      <div class="facts"><span class="seg"><a class="${gov === "city" ? "on" : ""}" href="#/budget/city">City of Kokomo</a><a class="${gov === "county" ? "on" : ""}" href="#/budget/county">Howard County</a></span><span>Budget year ${yearPicker}</span>${vote && isLatest ? `<span>Adopted ${esc(dt(vote.adopted, { month: "short", day: "numeric", year: "numeric" }))} · <a href="#/m/${esc(vote.meetingId)}" style="color:#fff">the vote</a></span>` : ""}<span><a href="#/budget/${gov}/departments" style="color:#fff">By department →</a></span></div>
     </div></div>
     <div class="two-col ${cls} bud">
     <div class="content">
@@ -784,7 +791,7 @@ async function pageBudgets(gov = "city", sub = "", arg = "") {
       ${jump && jp ? `<div class="note"><b>Why the headline number jumped in ${jump.year}.</b> The full adopted budget went from ${money(jp.total)} to ${money(jump.total)} in one year. Most of that is bookkeeping: starting in ${jump.year} the ${gov} began including ${jump.fundChanges?.added?.length || "more"} funds in the forms it files with the state${jump.tifTotal ? `, including its TIF districts (${money(jump.tifTotal)})` : ""}. On the funds it budgets every year, spending moved ${pctChange(jump.coreTotal, jp.coreTotal)}.</div>` : ""}
       <div class="sechead"><h2>Every fund</h2><span class="sub">Open one for its departments, line items and the votes that touched it.</span></div>
       <div class="ibar" style="margin-bottom:6px"><input id="fundQ" class="search" placeholder="Search funds (police, TIF, parks…)" style="width:100%;max-width:420px"></div>
-      <div class="funds"><div class="frow h"><span>Fund</span><span>${y.year} budget</span><span class="s3">Spent in ${actYear || "—"}</span><span>Rate</span></div>${fundRows}</div>
+      <div class="funds"><div class="frow h"><span>Fund</span><span>${y.year} budget</span><span class="s3">Spent in ${actY?.year || "—"}</span><span>Rate</span></div>${fundRows}</div>
       ${docs.length ? `<div class="sechead"><h2>The budget documents</h2><span class="sub">Read as adopted, checked to the dollar</span></div><div class="grid">${docs.map((r) => `<a class="card board ${cls}" href="#/budget/${esc(r.id)}"><h3>${esc(r.title)}</h3><div class="amount">${money(r.totals?.allFunds)}</div><div class="meta" style="margin-top:6px">${esc(r.docNumber || "")}${r.adopted ? ` · adopted ${esc(dt(r.adopted, { month: "short", day: "numeric", year: "numeric" }))}` : ""}</div></a>`).join("")}</div>` : ""}
     </div>
     <aside>
@@ -795,6 +802,53 @@ async function pageBudgets(gov = "city", sub = "", arg = "") {
     </aside></div>`;
   const q = document.getElementById("fundQ");
   q.oninput = () => { const t = q.value.trim().toLowerCase(); view.querySelectorAll(".frow[data-q]").forEach((r) => { r.style.display = !t || r.dataset.q.includes(t) ? "" : "none"; }); };
+  document.getElementById("yearPick").onchange = (e) => { location.hash = `#/budget/${gov}${e.target.value === String(allYears.at(-1).year) ? "" : `?y=${e.target.value}`}`; };
+}
+async function pageDepartments(gov) {
+  const d = await gwLoad(`depts-${GWU[gov] || "kokomo"}`); const who = gov === "city" ? "Kokomo" : "Howard County", cls = gov === "city" ? "b-city-council" : "b-council";
+  title(`${who} departments`);
+  const idx = d.index; const yr = idx[0]?.year;
+  view.innerHTML = `<div class="band ${cls}"><div class="in"><div class="kicker"><a href="#/budget/${gov}" style="color:#fff;text-decoration:none">Budgets</a> · Departments</div><h1>${who}, by department</h1><p class="lede">Every department the ${gov} budgets by line, across all of its funds, for ${yr}. Open one for its lines, its history and what it actually spent.</p></div></div>
+    <div class="two-col ${cls} bud"><div class="content">
+      <div class="ibar" style="margin-bottom:6px"><input id="deptQ" class="search" placeholder="Search departments (fire, sheriff, parks…)" style="width:100%;max-width:420px"></div>
+      <div class="funds"><div class="frow h"><span>Department</span><span>${yr} budget</span><span class="s3">Spent ${idx.find((i) => i.actualYear)?.actualYear || ""}</span><span></span></div>
+      ${idx.map((i) => `<a class="frow" href="#/budget/${gov}/dept/${encodeURIComponent(i.key)}" data-q="${esc(i.name.toLowerCase())}"><span><b>${esc(i.name)}</b>${i.funds.length > 1 ? `<div class="small muted">Across ${i.funds.length} funds: ${esc(i.funds.slice(0, 3).map(tc).join(", "))}${i.funds.length > 3 ? "…" : ""}</div>` : ""}</span><span>${Mshort(i.adopted)}</span><span class="s3">${i.actual != null ? Mshort(i.actual) : "<span class='muted small'>—</span>"}</span><span></span></a>`).join("")}</div>
+    </div><aside>
+      <div class="panel asidebox small">A department here is whatever the ${gov} labels as one on its budget lines. ${gov === "county" ? "The county books insurance, retirement and some other big costs under “no department,” so a county department's number is its direct costs only." : "Pensions for police and fire are separate funds, listed here as their own lines."} Actual spending by department is only reported for the general fund.</div>
+      <div class="panel asidebox small muted">Source: Budget Form 1 and the annual financial report, Indiana Gateway.</div>
+    </aside></div>`;
+  const q = document.getElementById("deptQ");
+  q.oninput = () => { const t = q.value.trim().toLowerCase(); view.querySelectorAll(".frow[data-q]").forEach((r) => { r.style.display = !t || r.dataset.q.includes(t) ? "" : "none"; }); };
+}
+async function pageDepartment(gov, key) {
+  const d = await gwLoad(`depts-${GWU[gov] || "kokomo"}`); const dep = d.depts[key]; if (!dep) throw new Error("No such department.");
+  const who = gov === "city" ? "Kokomo" : "Howard County", cls = gov === "city" ? "b-city-council" : "b-council";
+  title(`${dep.name} · ${who} budgets`);
+  const years = dep.years.filter((y) => y.year >= 2016); const bud = years.filter((y) => y.adopted != null); const cur = bud.at(-1), prev = bud.at(-2);
+  const max = Math.max(...years.map((y) => Math.max(y.adopted || 0, y.actual || 0)), 1);
+  const lastAct = years.slice().reverse().find((y) => y.actual != null);
+  const cats = Object.entries(cur.categories || {}).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+  const top = cur.lines.slice(0, 25);
+  const first = bud.find((y) => y.year >= 2016);
+  const lineHist = (item) => bud.map((y) => { const l = y.lines.find((x) => x.item === item); return l ? l.adopted : null; });
+  const related = await api({ view: "search", q: dep.name.replace(/&/g, "").split(" ").slice(0, 2).join(" ") }).catch(() => ({ results: [] }));
+  const items = (related.results || []).filter((r) => r.type === "item").slice(0, 8);
+  view.innerHTML = `<div class="band ${cls}"><div class="in"><div class="kicker"><a href="#/budget/${gov}" style="color:#fff;text-decoration:none">Budgets</a> · <a href="#/budget/${gov}/departments" style="color:#fff;text-decoration:none">Departments</a></div><h1>${esc(dep.name)}</h1>
+    <p class="lede">${money(cur.adopted)} budgeted for ${cur.year}${prev ? `, ${pctChange(cur.adopted, prev.adopted)} from ${prev.year}` : ""}${first && first !== cur ? `, and ${pctChange(cur.adopted, first.adopted)} since ${first.year}` : ""}.${lastAct ? ` In ${lastAct.year} it actually spent ${money(lastAct.actual)}${lastAct.adopted ? ` of ${money(lastAct.adopted)} budgeted` : ""}.` : ""}${cur.byFund.length > 1 ? ` Paid from ${cur.byFund.length} funds, mostly ${tc(cur.byFund[0].name)}.` : cur.byFund[0] ? ` Paid from the ${tc(cur.byFund[0].name)} fund.` : ""}</p></div></div>
+    <div class="two-col ${cls} bud"><div class="content">
+      <div class="sechead" style="margin-top:0"><h2>Year by year</h2><span class="sub">Budgeted, with what was actually spent where the report breaks it out</span></div>
+      <div class="panel" style="padding:30px 18px 28px"><div class="spark dual">${years.map((y) => `<div class="pair" title="${y.year}: budgeted ${money(y.adopted)}${y.actual != null ? `, spent ${money(y.actual)}` : ""}"><div class="bud" style="height:${Math.max(2, ((y.adopted || 0) / max) * 100)}%"></div><div class="act" style="height:${Math.max(0, ((y.actual || 0) / max) * 100)}%"></div><span>${y.adopted != null ? Mshort(y.adopted) : ""}</span><i>${y.year}</i></div>`).join("")}</div><div class="small muted" style="margin-top:26px"><span class="sw bud"></span> budgeted <span class="sw act" style="margin-left:10px"></span> actually spent</div></div>
+      ${cats.length ? `<div class="sechead"><h2>What kind of spending, ${cur.year}</h2></div>${hbars(cats.map(([k, v]) => [CAT_LABEL[k] || k, v]), cats[0][1])}` : ""}
+      <div class="sechead"><h2>Line by line, ${cur.year}</h2><span class="sub">${cur.lines.length} lines; the ${top.length} largest, with the same line in earlier years</span></div>
+      <div class="funds lines"><div class="frow h"><span>Line</span><span>${cur.year}</span><span class="s3">${prev ? prev.year : ""}</span><span>${first && first !== prev ? first.year : ""}</span></div>
+      ${top.map((l) => { const h = lineHist(l.item); const pv = prev ? h[bud.indexOf(prev)] : null; const fv = first ? h[bud.indexOf(first)] : null; return `<div class="frow"><span><b>${esc(l.item)}</b><div class="small muted">${esc((CAT_LABEL[l.category] || l.category || "").toLowerCase())}${cur.byFund.length > 1 ? ` · ${esc(tc(l.fundName))}` : ""}${l.published !== l.adopted ? ` · published ${money(l.published)}` : ""}</div></span><span>${money(l.adopted)}</span><span class="s3 muted">${pv != null ? money(pv) : "—"}</span><span class="muted">${fv != null ? money(fv) : "—"}</span></div>`; }).join("")}</div>
+      ${items.length ? `<div class="sechead"><h2>On the record</h2><span class="sub">Recent meeting items that mention this department</span></div><div class="grid">${items.map((r) => `<a class="card board ${bcls(r.body || "")}" href="#/m/${esc(r.meetingId)}#item-${r.idx}"><div class="meta"><b style="color:var(--ink)">${esc(dt(r.date))}</b><span class="who">${esc(r.bodyName)}</span></div><h3 style="margin-top:6px">${esc(r.title)}</h3></a>`).join("")}</div>` : ""}
+    </div><aside>
+      ${cur.byFund.length ? `<div class="panel asidebox"><b>Which funds pay for it, ${cur.year}</b>${cur.byFund.map((f) => `<div><a href="#/budget/${gov}/fund/${esc(f.code)}">${esc(tc(f.name))}</a> <b>${Mshort(f.amount)}</b></div>`).join("")}</div>` : ""}
+      ${lastAct?.actualByFund ? `<div class="panel asidebox"><b>Actually spent, ${lastAct.year}</b>${Object.values(lastAct.actualByFund).map((f) => `<div>${esc(tc(f.name))} <b>${Mshort(f.amount)}</b></div>`).join("")}<div class="small muted" style="margin-top:6px">From the ${gov}'s financial report, which breaks out departments for the general fund only.</div></div>` : ""}
+      ${gov === "county" ? `<div class="panel asidebox small">The county books insurance, retirement and some other costs under “no department,” so this is the department's direct costs only.</div>` : /fire department|police department/.test(key) ? `<div class="panel asidebox small">Pensions for retired ${key.includes("fire") ? "firefighters" : "officers"} are a separate fund: <a href="#/budget/${gov}/fund/${key.includes("fire") ? "0341" : "0342"}">${key.includes("fire") ? "Fire Pension" : "Police Pension"}</a>.</div>` : ""}
+      <div class="panel asidebox small muted">Source: Budget Form 1 (lines as adopted) and the annual financial report, Indiana Gateway.</div>
+    </aside></div>`;
 }
 function debtGroups(items) {
   const g = {};
@@ -1132,7 +1186,7 @@ async function route() {
     else if (parts[0] === "officials") await pageOfficials(parts[1]);
     else if (parts[0] === "o") await pageOfficial(parts[1], parts[2], parts[3]);
     else if (parts[0] === "search") await pageSearch(parts[1] || "");
-    else if (parts[0] === "budget" && (parts[1] === "city" || parts[1] === "county")) await pageBudgets(parts[1], parts[2] || "", parts[3] || "");
+    else if (parts[0] === "budget" && (parts[1] === "city" || parts[1] === "county")) await pageBudgets(parts[1], parts[2] || "", parts[3] || "", new URLSearchParams(query));
     else if (parts[0] === "budget" && parts[1]) await pageBudget(parts[1]);
     else if (parts[0] === "budget") await pageBudgets("city");
     else if (parts[0] === "about") pageAbout();

@@ -482,3 +482,14 @@ tr.muted td { color: var(--none); }
 .funds .frow.h { color: var(--faint); font-size: .85rem; border-bottom: 1px solid var(--line); }
 .bud .note { border-left: 4px solid var(--gold, #e2b93b); padding: 10px 14px; background: var(--panel); margin: 12px 0; }
 @media (max-width: 640px) { .hbars .brow { grid-template-columns: 120px 1fr 70px; } .funds .frow { grid-template-columns: 1fr 90px 60px; } .funds .frow .s3 { display: none; } .spark div span { font-size: .68rem; } }
+.ypick { font: inherit; font-weight: 600; padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,.7); background: rgba(255,255,255,.12); color: #fff; }
+.ypick option { color: var(--ink); }
+.spark.dual { height: 130px; }
+.spark.dual .pair { display: flex; align-items: flex-end; gap: 2px; background: none; height: 100%; position: relative; }
+.spark.dual .pair span, .spark.dual .pair i { left: 0; right: 0; }
+.spark.dual .pair .bud { flex: 1; background: var(--board, var(--council)); border-radius: 3px 3px 0 0; opacity: .9; }
+.spark.dual .pair .act { flex: 1; background: var(--board, var(--council)); opacity: .4; border-radius: 3px 3px 0 0; }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; background: var(--board, var(--council)); vertical-align: middle; }
+.sw.act { opacity: .4; }
+.funds.lines .frow { grid-template-columns: 1fr 110px 110px 110px; }
+@media (max-width: 640px) { .funds.lines .frow { grid-template-columns: 1fr 90px 80px; } .funds.lines .frow span:last-child { display: none; } }
