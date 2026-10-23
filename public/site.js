@@ -1199,7 +1199,7 @@ async function route() {
 addEventListener("hashchange", route);
 route();
 
-// The chip-in bar: shows on the third visit (or after a minute on this one), never on the alerts or about pages, and
+// The chip-in bar: after 15 seconds on a first visit, 8 on later ones; never on the alerts or about pages; and
 // stays gone for 30 days once dismissed (120 after a click through). All of it lives in this browser only.
 (function chipbar() {
   const el = document.getElementById("chipbar"); if (!el) return;
@@ -1208,7 +1208,7 @@ route();
   const until = +get("sr-chip-until") || 0; if (Date.now() < until) return;
   const visits = (+get("sr-visits") || 0) + 1; set("sr-visits", String(visits));
   const show = () => { if (/#\/(alerts|about)/.test(location.hash)) return; el.hidden = false; };
-  setTimeout(show, visits >= 3 ? 8000 : 60000);
+  setTimeout(show, visits >= 3 ? 8000 : 15000);
   const hide = (days) => { el.hidden = true; set("sr-chip-until", String(Date.now() + days * 864e5)); };
   el.querySelector("button").onclick = () => hide(30);
   el.querySelector("a").addEventListener("click", () => hide(120));
