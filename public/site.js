@@ -966,7 +966,19 @@ function pageAbout() {
   <h2>This is a beta</h2>
   <p>Second Reading is a work in progress. Older meetings are still being filled in, new meetings usually appear a day or two after they happen (the video has to be posted and transcribed first), and the way items are summarized and labeled will keep changing as the site improves. Expect gaps, and expect things to move around. When something is wrong, use “Report an error” on the item and a person will look at it.</p>
   <p>Second Reading follows the boards that make the biggest decisions in Howard County and Kokomo: the County Council and Commissioners, the County Plan Commission, the Kokomo Common Council, Plan Commission, Board of Zoning Appeals and Board of Public Works and Safety. It doesn't yet cover the school boards, the townships or the smaller towns.</p>
-  <h2>What's here</h2>
+  <h2>Where it comes from</h2>
+  <p>Every day it checks the county and city websites for new agendas and minutes and the official YouTube channels for meeting videos. AI reads them and writes a plain-language summary of each item: what it is, why it matters, how the vote went and what happens next. Every item links back to the source document or the moment in the video.</p>
+  <p>Budgets come from Indiana Gateway, the state system every local government files its budget forms and annual financial reports into. Those files are reconciled on their own (line items against adopted totals, receipts and spending against cash balances) and nothing AI-written is involved in the numbers.</p>
+  <p>The AI writes under strict rules. It can use only what is in the packet, the minutes and the video: every number, name, date and vote has to come from one of them, and when the record leaves something out (what will be built, who the buyer is, what it costs) the item says the record doesn't say, rather than guessing. It keeps the city and the county separate. It describes what a board did, not why, and it doesn't characterize people or take sides. It states where a decision stands (proposed, recommended, first reading, adopted) instead of rounding up to "approved." When the minutes and the video disagree, or something can't be confirmed, the item is labeled or held for a person to check. A person reviews what it writes, and anything reported as wrong is fixed by a person.</p>
+  <h2>What the labels mean</h2>
+  <p>${labelTag("confirmed")} The official minutes back up the outcome, the vote and the amount.</p>
+  <p>${labelTag("video", { minutesKind: "next-packet" })} Written from the meeting video. Boards approve their minutes at the next meeting, so this is checked again when the minutes come out.</p>
+  <p>${labelTag("unclear")} Something couldn't be confirmed, like audio that was hard to hear. The item says what.</p>
+  <p>When the minutes and the video disagree, the item is held back until a person checks it.</p>
+  <h2>About votes</h2>
+  <p>Most votes on these boards are voice votes. Indiana minutes usually say only that a motion carried, so the site names how individual members voted only when there was a roll call or someone was heard voting no.</p>
+  <h2>Corrections</h2>
+  <p>See something wrong? Use “Report an error” on any item. Reports go to a person, not straight onto the site.</p>  <h2>What's here</h2>
   <p><b>Meetings.</b> The calendar of every meeting, the agenda summarized before it happens, and the write-up after: each item, what was said, how the vote went, with links to the packet, the minutes and the moment in the video.</p>
   <p><b>Issues and projects.</b> One matter followed across meetings (a rezoning from its hearing to its final vote) is an issue, with a map of the steps it has to take and where it stands. When several issues are pieces of one thing, like the new jail, they're grouped on a project page so the whole sequence sits in one place, in order.</p>
   <p><b>Decisions.</b> Everything that was voted on, by board and by month, with the result and the amount.</p>
@@ -985,19 +997,7 @@ function pageAbout() {
   <p><b>The budget.</b> A notice to taxpayers, a public hearing, adoption by November 1, then the state certifies the budget, levy and tax rate by the end of December. The state can lower what was adopted but never raise it, so the tax rate a council adopts is a ceiling, not the final number.</p>
   <p><b>When can you speak?</b> The Open Door Law gives you the right to attend and record any meeting, not to speak. A legal right to be heard exists only where a public hearing is required: Plan Commission rezoning and plat hearings, Board of Zoning Appeals hearings, extra spending, the budget hearing, and tax-abatement confirmations. Everywhere else, including ordinary ordinances at the Council and anything at the Board of Works, letting the public speak is up to the board. The site marks items with "Public hearing · you can speak" when the right exists and "Comment usually allowed" when it's custom.</p>
   <p class="muted small">Sources: Indiana Code 36-7-4 (planning and zoning), 6-1.1-18-5 (additional appropriations), 36-4-6 and 36-2-4 (ordinances), 6-1.1-12.1 (abatements), 36-1-12 (public works bidding), 6-1.1-17 (budgets), 5-14-1.5 (Open Door Law); Kokomo Code of Ordinances chapter 30A; Howard County Code chapter 30.</p>
-  <h2>Where it comes from</h2>
-  <p>Every day it checks the county and city websites for new agendas and minutes and the official YouTube channels for meeting videos. AI reads them and writes a plain-language summary of each item: what it is, why it matters, how the vote went and what happens next. Every item links back to the source document or the moment in the video.</p>
-  <p>Budgets come from Indiana Gateway, the state system every local government files its budget forms and annual financial reports into. Those files are reconciled on their own (line items against adopted totals, receipts and spending against cash balances) and nothing AI-written is involved in the numbers.</p>
-  <p>The AI writes under strict rules. It can use only what is in the packet, the minutes and the video: every number, name, date and vote has to come from one of them, and when the record leaves something out (what will be built, who the buyer is, what it costs) the item says the record doesn't say, rather than guessing. It keeps the city and the county separate. It describes what a board did, not why, and it doesn't characterize people or take sides. It states where a decision stands (proposed, recommended, first reading, adopted) instead of rounding up to "approved." When the minutes and the video disagree, or something can't be confirmed, the item is labeled or held for a person to check. A person reviews what it writes, and anything reported as wrong is fixed by a person.</p>
-  <h2>What the labels mean</h2>
-  <p>${labelTag("confirmed")} The official minutes back up the outcome, the vote and the amount.</p>
-  <p>${labelTag("video", { minutesKind: "next-packet" })} Written from the meeting video. Boards approve their minutes at the next meeting, so this is checked again when the minutes come out.</p>
-  <p>${labelTag("unclear")} Something couldn't be confirmed, like audio that was hard to hear. The item says what.</p>
-  <p>When the minutes and the video disagree, the item is held back until a person checks it.</p>
-  <h2>About votes</h2>
-  <p>Most votes on these boards are voice votes. Indiana minutes usually say only that a motion carried, so the site names how individual members voted only when there was a roll call or someone was heard voting no.</p>
-  <h2>Corrections</h2>
-  <p>See something wrong? Use “Report an error” on any item. Reports go to a person, not straight onto the site.</p>`;
+`;
 }
 
 // ---- report dialog
